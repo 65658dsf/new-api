@@ -61,6 +61,9 @@ const DEFAULT_SIDEBAR_MODULES: SidebarModulesAdminConfig = {
     redemption: true,
     user: true,
     setting: true,
+    order: true,
+    payment_overview: true,
+    payment_orders: true,
     subscription: true,
   },
 }
@@ -99,6 +102,11 @@ const URL_TO_CONFIG_MAP: Record<string, { section: string; module: string }> = {
   '/dashboard/overview': { section: 'console', module: 'detail' },
   '/dashboard/models': { section: 'console', module: 'detail' },
   '/dashboard/users': { section: 'console', module: 'detail' },
+  '/dashboard/payment-overview': {
+    section: 'admin',
+    module: 'payment_overview',
+  },
+  '/dashboard/payment-orders': { section: 'admin', module: 'payment_orders' },
   '/keys': { section: 'console', module: 'token' },
   '/usage-logs': { section: 'console', module: 'log' },
   '/usage-logs/common': { section: 'console', module: 'log' },

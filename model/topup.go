@@ -3,6 +3,10 @@ package model
 import (
 	"errors"
 	"fmt"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
@@ -22,6 +26,57 @@ type TopUp struct {
 	CreateTime      int64   `json:"create_time"`
 	CompleteTime    int64   `json:"complete_time"`
 	Status          string  `json:"status"`
+}
+
+type TopUpUserInfo struct {
+	Id          int    `json:"id"`
+	Username    string `json:"username"`
+	DisplayName string `json:"display_name"`
+	Email       string `json:"email"`
+}
+
+type TopUpRecord struct {
+	TopUp
+	User *TopUpUserInfo `json:"user,omitempty"`
+}
+
+type TopUpQueryOptions struct {
+	Keyword         string
+	Status          string
+	PaymentMethod   string
+	PaymentProvider string
+	StartTime       int64
+	EndTime         int64
+}
+
+type TopUpOverviewDaily struct {
+	Date   string  `json:"date"`
+	Income float64 `json:"income"`
+	Orders int     `json:"orders"`
+}
+
+type TopUpOverviewPaymentMethod struct {
+	PaymentMethod   string  `json:"payment_method"`
+	PaymentProvider string  `json:"payment_provider"`
+	Income          float64 `json:"income"`
+	Orders          int     `json:"orders"`
+}
+
+type TopUpOverviewTopUser struct {
+	User   TopUpUserInfo `json:"user"`
+	Income float64       `json:"income"`
+	Orders int           `json:"orders"`
+}
+
+type TopUpOverview struct {
+	TodayIncome    float64                      `json:"today_income"`
+	RangeIncome    float64                      `json:"range_income"`
+	TodayOrders    int                          `json:"today_orders"`
+	RangeOrders    int                          `json:"range_orders"`
+	AverageAmount  float64                      `json:"average_amount"`
+	Daily          []TopUpOverviewDaily         `json:"daily"`
+	PaymentMethods []TopUpOverviewPaymentMethod `json:"payment_methods"`
+	TopUsers       []TopUpOverviewTopUser       `json:"top_users"`
 }
 
 const (
@@ -232,6 +287,133 @@ func GetAllTopUps(pageInfo *common.PageInfo) (topups []*TopUp, total int64, err 
 	return topups, total, nil
 }
 
+func applyTopUpQueryOptions(query *gorm.DB, options TopUpQueryOptions) (*gorm.DB, error) {
+	if options.Status != "" {
+		query = query.Where("status = ?", options.Status)
+	}
+	if options.PaymentMethod != "" {
+		query = query.Where("payment_method = ?", options.PaymentMethod)
+	}
+	if options.PaymentProvider != "" {
+		query = query.Where("payment_provider = ?", options.PaymentProvider)
+	}
+	if options.StartTime > 0 {
+		query = query.Where("create_time >= ?", options.StartTime)
+	}
+	if options.EndTime > 0 {
+		query = query.Where("create_time <= ?", options.EndTime)
+	}
+	if strings.TrimSpace(options.Keyword) == "" {
+		return query, nil
+	}
+
+	keyword := strings.TrimSpace(options.Keyword)
+	pattern, err := sanitizeLikePattern(keyword)
+	if err != nil {
+		return nil, err
+	}
+	if !strings.Contains(pattern, "%") && len([]rune(keyword)) >= 2 {
+		pattern = "%" + pattern + "%"
+	}
+
+	conditions := []string{"trade_no LIKE ? ESCAPE '!'"}
+	args := []interface{}{pattern}
+
+	if id, err := strconv.Atoi(keyword); err == nil {
+		conditions = append(conditions, "id = ?", "user_id = ?")
+		args = append(args, id, id)
+	}
+
+	userQuery := DB.Unscoped().Model(&User{})
+	userQuery = userQuery.Where(
+		"username LIKE ? ESCAPE '!' OR email LIKE ? ESCAPE '!' OR display_name LIKE ? ESCAPE '!'",
+		pattern,
+		pattern,
+		pattern,
+	)
+	var userIds []int
+	if err := userQuery.Limit(searchTopUpCountHardLimit).Pluck("id", &userIds).Error; err != nil {
+		common.SysError("failed to search topup users: " + err.Error())
+		return nil, errors.New("搜索充值记录失败")
+	}
+	if len(userIds) > 0 {
+		conditions = append(conditions, "user_id IN ?")
+		args = append(args, userIds)
+	}
+
+	return query.Where("("+strings.Join(conditions, " OR ")+")", args...), nil
+}
+
+func attachTopUpUsers(records []*TopUpRecord) error {
+	userIdsMap := make(map[int]struct{})
+	for _, record := range records {
+		if record.UserId > 0 {
+			userIdsMap[record.UserId] = struct{}{}
+		}
+	}
+	if len(userIdsMap) == 0 {
+		return nil
+	}
+
+	userIds := make([]int, 0, len(userIdsMap))
+	for id := range userIdsMap {
+		userIds = append(userIds, id)
+	}
+
+	var users []User
+	if err := DB.Unscoped().
+		Select("id", "username", "display_name", "email").
+		Where("id IN ?", userIds).
+		Find(&users).Error; err != nil {
+		return err
+	}
+
+	userMap := make(map[int]TopUpUserInfo, len(users))
+	for _, user := range users {
+		userMap[user.Id] = TopUpUserInfo{
+			Id:          user.Id,
+			Username:    user.Username,
+			DisplayName: user.DisplayName,
+			Email:       user.Email,
+		}
+	}
+
+	for _, record := range records {
+		if user, ok := userMap[record.UserId]; ok {
+			userCopy := user
+			record.User = &userCopy
+		}
+	}
+	return nil
+}
+
+func GetAllTopUpRecords(pageInfo *common.PageInfo, options TopUpQueryOptions) (records []*TopUpRecord, total int64, err error) {
+	query := DB.Model(&TopUp{})
+	query, err = applyTopUpQueryOptions(query, options)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	if err = query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var topups []TopUp
+	if err = query.Order("id desc").Limit(pageInfo.GetPageSize()).Offset(pageInfo.GetStartIdx()).Find(&topups).Error; err != nil {
+		return nil, 0, err
+	}
+
+	records = make([]*TopUpRecord, 0, len(topups))
+	for _, topup := range topups {
+		topupCopy := topup
+		records = append(records, &TopUpRecord{TopUp: topupCopy})
+	}
+	if err = attachTopUpUsers(records); err != nil {
+		return nil, 0, err
+	}
+	return records, total, nil
+}
+
 // searchTopUpCountHardLimit 搜索充值记录时 COUNT 的安全上限，
 // 防止对超大表执行无界 COUNT 触发 DoS。
 const searchTopUpCountHardLimit = 10000
@@ -314,6 +496,177 @@ func SearchAllTopUps(keyword string, pageInfo *common.PageInfo) (topups []*TopUp
 		return nil, 0, err
 	}
 	return topups, total, nil
+}
+
+func topUpEffectiveTime(topUp TopUp) int64 {
+	if topUp.CompleteTime > 0 {
+		return topUp.CompleteTime
+	}
+	return topUp.CreateTime
+}
+
+func GetTopUpOverview(days int, now time.Time) (*TopUpOverview, error) {
+	if days != 7 && days != 30 && days != 90 {
+		days = 30
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+
+	location := now.Location()
+	todayStart := time.Date(now.In(location).Year(), now.In(location).Month(), now.In(location).Day(), 0, 0, 0, 0, location)
+	rangeStart := todayStart.AddDate(0, 0, -(days - 1))
+	rangeEnd := todayStart.AddDate(0, 0, 1).Add(-time.Second)
+
+	var topups []TopUp
+	if err := DB.Where("status = ?", common.TopUpStatusSuccess).
+		Where("(complete_time >= ? AND complete_time <= ?) OR (complete_time = 0 AND create_time >= ? AND create_time <= ?)",
+			rangeStart.Unix(),
+			rangeEnd.Unix(),
+			rangeStart.Unix(),
+			rangeEnd.Unix(),
+		).
+		Find(&topups).Error; err != nil {
+		return nil, err
+	}
+
+	dailyMap := make(map[string]*TopUpOverviewDaily, days)
+	for i := 0; i < days; i++ {
+		date := rangeStart.AddDate(0, 0, i).Format("2006-01-02")
+		dailyMap[date] = &TopUpOverviewDaily{Date: date}
+	}
+
+	type paymentAggregate struct {
+		paymentMethod   string
+		paymentProvider string
+		income          float64
+		orders          int
+	}
+	type userAggregate struct {
+		income float64
+		orders int
+	}
+
+	paymentMap := make(map[string]*paymentAggregate)
+	userMap := make(map[int]*userAggregate)
+	todayEnd := todayStart.AddDate(0, 0, 1).Add(-time.Second).Unix()
+	todayStartUnix := todayStart.Unix()
+
+	overview := &TopUpOverview{}
+	for _, topUp := range topups {
+		effectiveTime := topUpEffectiveTime(topUp)
+		if effectiveTime < rangeStart.Unix() || effectiveTime > rangeEnd.Unix() {
+			continue
+		}
+
+		overview.RangeIncome += topUp.Money
+		overview.RangeOrders++
+		if effectiveTime >= todayStartUnix && effectiveTime <= todayEnd {
+			overview.TodayIncome += topUp.Money
+			overview.TodayOrders++
+		}
+
+		date := time.Unix(effectiveTime, 0).In(location).Format("2006-01-02")
+		if daily, ok := dailyMap[date]; ok {
+			daily.Income += topUp.Money
+			daily.Orders++
+		}
+
+		paymentKey := topUp.PaymentProvider + "\x00" + topUp.PaymentMethod
+		aggregate, ok := paymentMap[paymentKey]
+		if !ok {
+			aggregate = &paymentAggregate{
+				paymentMethod:   topUp.PaymentMethod,
+				paymentProvider: topUp.PaymentProvider,
+			}
+			paymentMap[paymentKey] = aggregate
+		}
+		aggregate.income += topUp.Money
+		aggregate.orders++
+
+		if topUp.UserId > 0 {
+			userAgg, ok := userMap[topUp.UserId]
+			if !ok {
+				userAgg = &userAggregate{}
+				userMap[topUp.UserId] = userAgg
+			}
+			userAgg.income += topUp.Money
+			userAgg.orders++
+		}
+	}
+
+	if overview.RangeOrders > 0 {
+		overview.AverageAmount = overview.RangeIncome / float64(overview.RangeOrders)
+	}
+
+	overview.Daily = make([]TopUpOverviewDaily, 0, days)
+	for i := 0; i < days; i++ {
+		date := rangeStart.AddDate(0, 0, i).Format("2006-01-02")
+		overview.Daily = append(overview.Daily, *dailyMap[date])
+	}
+
+	overview.PaymentMethods = make([]TopUpOverviewPaymentMethod, 0, len(paymentMap))
+	for _, aggregate := range paymentMap {
+		overview.PaymentMethods = append(overview.PaymentMethods, TopUpOverviewPaymentMethod{
+			PaymentMethod:   aggregate.paymentMethod,
+			PaymentProvider: aggregate.paymentProvider,
+			Income:          aggregate.income,
+			Orders:          aggregate.orders,
+		})
+	}
+	sort.SliceStable(overview.PaymentMethods, func(i, j int) bool {
+		if overview.PaymentMethods[i].Income == overview.PaymentMethods[j].Income {
+			return overview.PaymentMethods[i].Orders > overview.PaymentMethods[j].Orders
+		}
+		return overview.PaymentMethods[i].Income > overview.PaymentMethods[j].Income
+	})
+
+	userIds := make([]int, 0, len(userMap))
+	for id := range userMap {
+		userIds = append(userIds, id)
+	}
+	users := make(map[int]TopUpUserInfo, len(userIds))
+	if len(userIds) > 0 {
+		var rows []User
+		if err := DB.Unscoped().
+			Select("id", "username", "display_name", "email").
+			Where("id IN ?", userIds).
+			Find(&rows).Error; err != nil {
+			return nil, err
+		}
+		for _, user := range rows {
+			users[user.Id] = TopUpUserInfo{
+				Id:          user.Id,
+				Username:    user.Username,
+				DisplayName: user.DisplayName,
+				Email:       user.Email,
+			}
+		}
+	}
+
+	overview.TopUsers = make([]TopUpOverviewTopUser, 0, len(userMap))
+	for userId, aggregate := range userMap {
+		user := users[userId]
+		if user.Id == 0 {
+			user.Id = userId
+		}
+		overview.TopUsers = append(overview.TopUsers, TopUpOverviewTopUser{
+			User:   user,
+			Income: aggregate.income,
+			Orders: aggregate.orders,
+		})
+	}
+	sort.SliceStable(overview.TopUsers, func(i, j int) bool {
+		if overview.TopUsers[i].Income == overview.TopUsers[j].Income {
+			return overview.TopUsers[i].Orders > overview.TopUsers[j].Orders
+		}
+		return overview.TopUsers[i].Income > overview.TopUsers[j].Income
+	})
+	if len(overview.TopUsers) > 10 {
+		overview.TopUsers = overview.TopUsers[:10]
+	}
+
+	return overview, nil
 }
 
 // ManualCompleteTopUp 管理员手动完成订单并给用户充值

@@ -211,6 +211,87 @@ export interface UserChartsFilters {
 }
 
 // ============================================================================
+// Payment / Top-up Admin Types
+// ============================================================================
+
+export type TopUpStatus = 'success' | 'pending' | 'failed' | 'expired'
+
+export interface DashboardApiResponse<T = unknown> {
+  success?: boolean
+  message?: string
+  data?: T
+}
+
+export interface TopUpUserInfo {
+  id: number
+  username: string
+  display_name: string
+  email: string
+}
+
+export interface TopUpRecord {
+  id: number
+  user_id: number
+  amount: number
+  money: number
+  trade_no: string
+  payment_method: string
+  payment_provider?: string
+  create_time: number
+  complete_time?: number
+  status: TopUpStatus
+  user?: TopUpUserInfo
+}
+
+export interface TopUpListResponse {
+  items: TopUpRecord[]
+  total: number
+}
+
+export type TopUpOverviewDays = 7 | 30 | 90
+
+export interface TopUpOverviewDaily {
+  date: string
+  income: number
+  orders: number
+}
+
+export interface TopUpOverviewPaymentMethod {
+  payment_method: string
+  payment_provider?: string
+  income: number
+  orders: number
+}
+
+export interface TopUpOverviewTopUser {
+  user: TopUpUserInfo
+  income: number
+  orders: number
+}
+
+export interface TopUpOverview {
+  today_income: number
+  range_income: number
+  today_orders: number
+  range_orders: number
+  average_amount: number
+  daily: TopUpOverviewDaily[]
+  payment_methods: TopUpOverviewPaymentMethod[]
+  top_users: TopUpOverviewTopUser[]
+}
+
+export interface TopUpOrdersQuery {
+  p: number
+  page_size: number
+  keyword?: string
+  status?: string
+  payment_method?: string
+  payment_provider?: string
+  start_time?: number
+  end_time?: number
+}
+
+// ============================================================================
 // API Info Types
 // ============================================================================
 

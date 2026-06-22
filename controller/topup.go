@@ -465,18 +465,19 @@ func GetUserTopUps(c *gin.Context) {
 // GetAllTopUps 管理员获取全平台充值记录
 func GetAllTopUps(c *gin.Context) {
 	pageInfo := common.GetPageQuery(c)
-	keyword := c.Query("keyword")
 
-	var (
-		topups []*model.TopUp
-		total  int64
-		err    error
-	)
-	if keyword != "" {
-		topups, total, err = model.SearchAllTopUps(keyword, pageInfo)
-	} else {
-		topups, total, err = model.GetAllTopUps(pageInfo)
+	startTime, _ := strconv.ParseInt(c.Query("start_time"), 10, 64)
+	endTime, _ := strconv.ParseInt(c.Query("end_time"), 10, 64)
+	options := model.TopUpQueryOptions{
+		Keyword:         c.Query("keyword"),
+		Status:          c.Query("status"),
+		PaymentMethod:   c.Query("payment_method"),
+		PaymentProvider: c.Query("payment_provider"),
+		StartTime:       startTime,
+		EndTime:         endTime,
 	}
+
+	topups, total, err := model.GetAllTopUpRecords(pageInfo, options)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -485,6 +486,16 @@ func GetAllTopUps(c *gin.Context) {
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(topups)
 	common.ApiSuccess(c, pageInfo)
+}
+
+func GetTopUpOverview(c *gin.Context) {
+	days, _ := strconv.Atoi(c.DefaultQuery("days", "30"))
+	overview, err := model.GetTopUpOverview(days, time.Now())
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, overview)
 }
 
 type AdminCompleteTopupRequest struct {

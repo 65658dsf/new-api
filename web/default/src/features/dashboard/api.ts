@@ -18,8 +18,13 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
 import type {
+  DashboardApiResponse,
   FlowQuotaDataItem,
   QuotaDataItem,
+  TopUpListResponse,
+  TopUpOrdersQuery,
+  TopUpOverview,
+  TopUpOverviewDays,
   UptimeGroupResult,
 } from './types'
 
@@ -87,6 +92,48 @@ export async function getFlowQuotaDates(
 export async function getUptimeStatus() {
   const res = await api.get<{ success: boolean; data: UptimeGroupResult[] }>(
     '/api/uptime/status'
+  )
+  return res.data
+}
+
+// ----------------------------------------------------------------------------
+// Payment / Top-up Admin
+// ----------------------------------------------------------------------------
+
+export async function getTopUpOverview(
+  days: TopUpOverviewDays
+): Promise<DashboardApiResponse<TopUpOverview>> {
+  const res = await api.get<DashboardApiResponse<TopUpOverview>>(
+    '/api/user/topup/overview',
+    {
+      params: { days },
+      skipBusinessError: true,
+    }
+  )
+  return res.data
+}
+
+export async function getTopUpOrders(
+  params: TopUpOrdersQuery
+): Promise<DashboardApiResponse<TopUpListResponse>> {
+  const res = await api.get<DashboardApiResponse<TopUpListResponse>>(
+    '/api/user/topup',
+    {
+      params,
+      skipBusinessError: true,
+      disableDuplicate: true,
+    }
+  )
+  return res.data
+}
+
+export async function completeTopUpOrder(
+  tradeNo: string
+): Promise<DashboardApiResponse> {
+  const res = await api.post<DashboardApiResponse>(
+    '/api/user/topup/complete',
+    { trade_no: tradeNo },
+    { skipBusinessError: true }
   )
   return res.data
 }

@@ -137,9 +137,31 @@ export function useSidebarData(): SidebarData {
             icon: Ticket,
           },
           {
-            title: t('Subscriptions'),
-            url: '/subscriptions',
+            title: t('Order Management'),
             icon: CreditCard,
+            activeUrls: ['/dashboard/payment-overview', '/dashboard/payment-orders', '/subscriptions'],
+            configUrls: [
+              '/dashboard/payment-overview',
+              '/dashboard/payment-orders',
+              '/subscriptions',
+            ],
+            items: [
+              {
+                title: t('Payment Overview'),
+                url: '/dashboard/payment-overview',
+                icon: Activity,
+              },
+              {
+                title: t('Payment Orders'),
+                url: '/dashboard/payment-orders',
+                icon: FileText,
+              },
+              {
+                title: t('Subscriptions'),
+                url: '/subscriptions',
+                icon: CreditCard,
+              },
+            ],
           },
           {
             title: t('System Settings'),

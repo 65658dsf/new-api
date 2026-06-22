@@ -46,7 +46,7 @@ import {
 import {
   type DashboardSectionId,
   DASHBOARD_DEFAULT_SECTION,
-  DASHBOARD_SECTION_IDS,
+  DASHBOARD_ANALYTICS_SECTION_IDS,
 } from './section-registry'
 import {
   type DashboardChartPreferences,
@@ -90,6 +90,18 @@ const LazyUserCharts = lazy(() =>
 const LazyFlowCharts = lazy(() =>
   import('./components/flow/flow-charts').then((m) => ({
     default: m.FlowCharts,
+  }))
+)
+
+const LazyPaymentOverview = lazy(() =>
+  import('./components/payments/payment-overview').then((m) => ({
+    default: m.PaymentOverview,
+  }))
+)
+
+const LazyPaymentOrders = lazy(() =>
+  import('./components/payments/payment-orders').then((m) => ({
+    default: m.PaymentOrders,
   }))
 )
 
@@ -159,6 +171,12 @@ const SECTION_META: Record<DashboardSectionId, { titleKey: string }> = {
   users: {
     titleKey: 'User Analytics',
   },
+  'payment-overview': {
+    titleKey: 'Payment Overview',
+  },
+  'payment-orders': {
+    titleKey: 'Payment Orders',
+  },
 }
 
 export function Dashboard() {
@@ -217,7 +235,7 @@ export function Dashboard() {
   const isAdmin = Boolean(userRole && userRole >= ROLE.ADMIN)
   const visibleSections = useMemo(
     () =>
-      DASHBOARD_SECTION_IDS.filter(
+      DASHBOARD_ANALYTICS_SECTION_IDS.filter(
         (section) => section !== 'overview' && (section !== 'users' || isAdmin)
       ),
     [isAdmin]
@@ -232,7 +250,11 @@ export function Dashboard() {
     [navigate]
   )
   const showSectionTabs =
-    activeSection !== 'overview' && visibleSections.length > 1
+    activeSection !== 'overview' &&
+    (DASHBOARD_ANALYTICS_SECTION_IDS as readonly DashboardSectionId[]).includes(
+      activeSection
+    ) &&
+    visibleSections.length > 1
   const modelActions =
     activeSection === 'models' ? (
       <>
@@ -377,6 +399,20 @@ export function Dashboard() {
                   filters={modelFilters}
                   sensitiveVisible={flowSensitiveVisible}
                 />
+              </Suspense>
+            </FadeIn>
+          )}
+          {activeSection === 'payment-overview' && (
+            <FadeIn>
+              <Suspense fallback={<ModelChartsFallback />}>
+                <LazyPaymentOverview />
+              </Suspense>
+            </FadeIn>
+          )}
+          {activeSection === 'payment-orders' && (
+            <FadeIn>
+              <Suspense fallback={<ModelChartsFallback />}>
+                <LazyPaymentOrders />
               </Suspense>
             </FadeIn>
           )}
