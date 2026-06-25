@@ -53,6 +53,7 @@ import {
   deleteUserSubscription,
 } from '../../api'
 import { formatQuota } from '@/lib/format'
+import { GroupBadge } from '@/components/group-badge'
 import { formatTimestamp } from '../../lib'
 import type { PlanRecord, UserSubscriptionRecord } from '../../types'
 
@@ -305,6 +306,20 @@ export function UserSubscriptionsDialog(props: Props) {
                     return total > 0
                       ? `${formatQuota(used)}/${formatQuota(total)}`
                       : t('Unlimited')
+                  },
+                },
+                {
+                  id: 'billing_group',
+                  header: t('Subscription Quota Group'),
+                  cell: (record) => {
+                    const group = record.subscription.billing_group
+                    return group ? (
+                      <GroupBadge group={group} />
+                    ) : (
+                      <span className='text-muted-foreground'>
+                        {t('All Groups')}
+                      </span>
+                    )
                   },
                 },
                 {

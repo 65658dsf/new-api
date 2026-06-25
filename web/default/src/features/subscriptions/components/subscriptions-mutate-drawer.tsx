@@ -457,7 +457,53 @@ export function SubscriptionsMutateDrawer({
                         </SelectContent>
                       </Select>
                       <FormDescription>
-                        {t('Downgrade to this group after the subscription expires')}
+                        {t(
+                          'Downgrade to this group after the subscription expires'
+                        )}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name='billing_group'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('Subscription Quota Group')}</FormLabel>
+                      <Select
+                        items={[
+                          { value: '__all__', label: t('All Groups') },
+                          ...groupOptions.map((g) => ({ value: g, label: g })),
+                        ]}
+                        onValueChange={(v) =>
+                          field.onChange(v === '__all__' ? '' : v)
+                        }
+                        value={field.value || ''}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder={t('All Groups')} />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent alignItemWithTrigger={false}>
+                          <SelectGroup>
+                            <SelectItem value='__all__'>
+                              {t('All Groups')}
+                            </SelectItem>
+                            {groupOptions.map((g) => (
+                              <SelectItem key={g} value={g}>
+                                {g}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                      <FormDescription>
+                        {t(
+                          'When set, this subscription quota is used only for requests in the selected group. Other groups use wallet balance.'
+                        )}
                       </FormDescription>
                       <FormMessage />
                     </FormItem>

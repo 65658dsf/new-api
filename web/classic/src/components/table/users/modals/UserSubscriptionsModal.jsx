@@ -312,6 +312,19 @@ const UserSubscriptionsModal = ({ visible, onCancel, user, t, onSuccess }) => {
         },
       },
       {
+        title: t('订阅额度分组'),
+        key: 'billing_group',
+        width: 120,
+        render: (_, record) => {
+          const group = record?.subscription?.billing_group || '';
+          return (
+            <Text type={group ? 'secondary' : 'tertiary'}>
+              {group || t('所有分组')}
+            </Text>
+          );
+        },
+      },
+      {
         title: '',
         key: 'operate',
         width: 140,

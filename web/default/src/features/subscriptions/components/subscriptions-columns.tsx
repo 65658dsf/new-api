@@ -192,6 +192,25 @@ export function useSubscriptionsColumns(): ColumnDef<PlanRecord>[] {
         size: 120,
       },
       {
+        id: 'billing_group',
+        header: t('Subscription Quota Group'),
+        meta: { mobileHidden: true },
+        cell: ({ row }) => {
+          const group = row.original.plan.billing_group
+          if (!group) {
+            return (
+              <span className='text-muted-foreground'>{t('All Groups')}</span>
+            )
+          }
+          return (
+            <BadgeCell>
+              <GroupBadge group={group} />
+            </BadgeCell>
+          )
+        },
+        size: 140,
+      },
+      {
         id: 'actions',
         header: () => t('Actions'),
         cell: ({ row }) => <DataTableRowActions row={row} />,

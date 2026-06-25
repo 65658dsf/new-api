@@ -95,6 +95,7 @@ const AddEditSubscriptionModal = ({
     max_purchase_per_user: 0,
     total_amount: 0,
     upgrade_group: '',
+    billing_group: '',
     stripe_price_id: '',
     creem_product_id: '',
   });
@@ -121,6 +122,7 @@ const AddEditSubscriptionModal = ({
         quotaToDisplayAmount(p.total_amount || 0).toFixed(2),
       ),
       upgrade_group: p.upgrade_group || '',
+      billing_group: p.billing_group || '',
       stripe_price_id: p.stripe_price_id || '',
       creem_product_id: p.creem_product_id || '',
     };
@@ -164,6 +166,7 @@ const AddEditSubscriptionModal = ({
           max_purchase_per_user: Number(values.max_purchase_per_user || 0),
           total_amount: displayAmountToQuota(values.total_amount),
           upgrade_group: values.upgrade_group || '',
+          billing_group: values.billing_group || '',
         },
       };
       if (editingPlan?.plan?.id) {
@@ -334,6 +337,26 @@ const AddEditSubscriptionModal = ({
                         )}
                       >
                         <Select.Option value=''>{t('不升级')}</Select.Option>
+                        {(groupOptions || []).map((g) => (
+                          <Select.Option key={g} value={g}>
+                            {g}
+                          </Select.Option>
+                        ))}
+                      </Form.Select>
+                    </Col>
+
+                    <Col span={12}>
+                      <Form.Select
+                        field='billing_group'
+                        label={t('订阅额度分组')}
+                        showClear
+                        loading={groupLoading}
+                        placeholder={t('所有分组')}
+                        extraText={t(
+                          '设置后，只有使用该分组时才会消耗订阅额度；其他分组正常使用余额。',
+                        )}
+                      >
+                        <Select.Option value=''>{t('所有分组')}</Select.Option>
                         {(groupOptions || []).map((g) => (
                           <Select.Option key={g} value={g}>
                             {g}

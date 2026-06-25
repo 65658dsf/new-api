@@ -3826,6 +3826,9 @@
     "并确认自行承担部署": "confirm that I bear legal responsibility arising from deployment",
     "运营和收费行为产生的法律责任": "operation and charging behavior",
     "，": ", ",
-    "、": ", "
+    "、": ", ",
+    "订阅额度分组": "Subscription Quota Group",
+    "所有分组": "All Groups",
+    "设置后，只有使用该分组时才会消耗订阅额度；其他分组正常使用余额。": "When set, subscription quota is used only for this group. Other groups use wallet balance as usual."
   }
 }
