@@ -68,7 +68,11 @@ func seedBillingSessionSubscription(t *testing.T, id int, userId int, billingGro
 	require.NoError(t, model.DB.Create(sub).Error)
 }
 
-func makeBillingSessionRelayInfo(userId int, tokenId int, tokenKey string, usingGroup string, preference string) *relaycommon.RelayInfo {
+func makeBillingSessionRelayInfo(userId int, tokenId int, tokenKey string, usingGroup string, preference string, isPlayground ...bool) *relaycommon.RelayInfo {
+	playground := true
+	if len(isPlayground) > 0 {
+		playground = isPlayground[0]
+	}
 	return &relaycommon.RelayInfo{
 		UserId:          userId,
 		TokenId:         tokenId,
@@ -76,7 +80,7 @@ func makeBillingSessionRelayInfo(userId int, tokenId int, tokenKey string, using
 		UsingGroup:      usingGroup,
 		OriginModelName: "gpt-test",
 		RequestId:       "req-" + tokenKey + "-" + usingGroup,
-		IsPlayground:    true,
+		IsPlayground:    playground,
 		UserSetting: dto.UserSetting{
 			BillingPreference: preference,
 		},
@@ -118,6 +122,29 @@ func TestNewBillingSessionUsesWalletWhenBillingGroupDoesNotMatch(t *testing.T) {
 	seedBillingSessionSubscription(t, subId, userId, "vip", 10000)
 
 	relayInfo := makeBillingSessionRelayInfo(userId, tokenId, "billing-miss", "default", "subscription_first")
+	session, apiErr := NewBillingSession(c, relayInfo, 1000)
+
+	require.Nil(t, apiErr)
+	require.NotNil(t, session)
+	assert.Equal(t, BillingSourceWallet, relayInfo.BillingSource)
+	assert.Zero(t, relayInfo.SubscriptionId)
+	assert.Equal(t, 1000, relayInfo.FinalPreConsumedQuota)
+	assert.Equal(t, 4000, getUserQuota(t, userId))
+	assert.Equal(t, int64(0), getSubscriptionUsed(t, subId))
+}
+
+func TestNewBillingSessionUsesWalletForChatGPTWhenSubscriptionTargetsChatGPTPro(t *testing.T) {
+	truncate(t)
+	c := &gin.Context{}
+
+	const userId = 1004
+	const tokenId = 1004
+	const subId = 1004
+	seedBillingSessionUser(t, userId, 5000)
+	seedBillingSessionToken(t, tokenId, userId, "billing-api-miss", 5000)
+	seedBillingSessionSubscription(t, subId, userId, "ChatGPTPro", 10000)
+
+	relayInfo := makeBillingSessionRelayInfo(userId, tokenId, "billing-api-miss", "ChatGPT", "subscription_first")
 	session, apiErr := NewBillingSession(c, relayInfo, 1000)
 
 	require.Nil(t, apiErr)
