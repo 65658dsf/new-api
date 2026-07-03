@@ -133,6 +133,71 @@ func TestSubmitInvoiceApplicationResubmitsRejectedMultipleOrders(t *testing.T) {
 	require.Len(t, resubmitted.Orders, 2)
 }
 
+func TestSubmitInvoiceApplicationMergesRejectedOrderWithOpenOrder(t *testing.T) {
+	truncateTables(t)
+
+	user := createInvoiceTestUser(t, "merge_rejected")
+	admin := createInvoiceTestUser(t, "merge_rejected_admin")
+	rejectedTopUp := createInvoiceTestTopUp(t, user.Id, "invoice_merge_rejected", common.TopUpStatusSuccess)
+	openTopUp := createInvoiceTestTopUp(t, user.Id, "invoice_merge_open", common.TopUpStatusSuccess)
+
+	app, err := SubmitInvoiceApplication(user.Id, validInvoiceSubmit(rejectedTopUp.TradeNo))
+	require.NoError(t, err)
+	app, err = RejectInvoiceApplication(app.Id, admin.Id, "merge later")
+	require.NoError(t, err)
+
+	input := validInvoiceSubmit("")
+	input.TradeNos = []string{rejectedTopUp.TradeNo, openTopUp.TradeNo}
+	merged, err := SubmitInvoiceApplication(user.Id, input)
+	require.NoError(t, err)
+
+	assert.Equal(t, app.Id, merged.Id)
+	assert.Equal(t, InvoiceStatusPending, merged.Status)
+	assert.Equal(t, rejectedTopUp.Amount+openTopUp.Amount, merged.Amount)
+	require.Len(t, merged.Orders, 2)
+	assert.Equal(t, rejectedTopUp.TradeNo, merged.Orders[0].TradeNo)
+	assert.Equal(t, openTopUp.TradeNo, merged.Orders[1].TradeNo)
+}
+
+func TestCancelUserInvoiceApplicationReleasesOrders(t *testing.T) {
+	truncateTables(t)
+
+	user := createInvoiceTestUser(t, "cancel")
+	topUp := createInvoiceTestTopUp(t, user.Id, "invoice_cancel_order", common.TopUpStatusSuccess)
+
+	app, err := SubmitInvoiceApplication(user.Id, validInvoiceSubmit(topUp.TradeNo))
+	require.NoError(t, err)
+	require.NoError(t, CancelUserInvoiceApplication(user.Id, app.Id))
+
+	records, _, err := GetUserInvoiceTopUpRecords(user.Id, &common.PageInfo{Page: 1, PageSize: 10}, "")
+	require.NoError(t, err)
+	require.Len(t, records, 1)
+	assert.False(t, records[0].InvoiceApplied)
+
+	recreated, err := SubmitInvoiceApplication(user.Id, validInvoiceSubmit(topUp.TradeNo))
+	require.NoError(t, err)
+	assert.Equal(t, InvoiceStatusPending, recreated.Status)
+	require.Len(t, recreated.Orders, 1)
+	assert.Equal(t, topUp.TradeNo, recreated.Orders[0].TradeNo)
+}
+
+func TestCancelUserInvoiceApplicationRejectsApprovedApplication(t *testing.T) {
+	truncateTables(t)
+
+	user := createInvoiceTestUser(t, "cancel_approved")
+	admin := createInvoiceTestUser(t, "cancel_approved_admin")
+	topUp := createInvoiceTestTopUp(t, user.Id, "invoice_cancel_approved", common.TopUpStatusSuccess)
+
+	app, err := SubmitInvoiceApplication(user.Id, validInvoiceSubmit(topUp.TradeNo))
+	require.NoError(t, err)
+	app, err = ApproveInvoiceApplication(app.Id, admin.Id, "invoice.pdf", "stored.pdf")
+	require.NoError(t, err)
+
+	err = CancelUserInvoiceApplication(user.Id, app.Id)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "不能撤销")
+}
+
 func TestSubmitInvoiceApplicationRequiresOwnedSuccessfulTopUp(t *testing.T) {
 	truncateTables(t)
 

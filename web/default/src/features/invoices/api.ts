@@ -81,6 +81,15 @@ export async function downloadInvoicePDF(id: number): Promise<Blob> {
   return res.data as Blob
 }
 
+export async function cancelInvoiceApplication(
+  id: number
+): Promise<InvoiceApiResponse> {
+  const res = await api.delete(`/api/user/invoices/${id}`, {
+    skipBusinessError: true,
+  })
+  return res.data
+}
+
 export async function getAdminInvoiceApplications(
   params: InvoiceListQuery
 ): Promise<InvoiceApiResponse<InvoicePageResponse<InvoiceApplication>>> {

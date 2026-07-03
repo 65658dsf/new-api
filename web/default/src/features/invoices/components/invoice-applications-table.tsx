@@ -20,14 +20,16 @@ For commercial licensing, please contact support@quantumnous.com
 import { useCallback, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { type ColumnDef, type PaginationState } from '@tanstack/react-table'
-import { Download, FilePenLine, RefreshCcw } from 'lucide-react'
+import { Download, FilePenLine, RefreshCcw, RotateCcw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { DataTablePage, useDataTable } from '@/components/data-table'
+import { Dialog } from '@/components/dialog'
 import { Button } from '@/components/ui/button'
 import { formatBillingCurrencyFromUSD } from '@/lib/currency'
 import { formatTimestampToDate } from '@/lib/format'
 import {
+  cancelInvoiceApplication,
   downloadInvoicePDF,
   getUserInvoiceApplications,
   submitInvoiceApplication,
@@ -61,6 +63,8 @@ export function InvoiceApplicationsTable() {
   const queryClient = useQueryClient()
   const [downloadingId, setDownloadingId] = useState<number | null>(null)
   const [editingApplication, setEditingApplication] =
+    useState<InvoiceApplication | null>(null)
+  const [cancelingApplication, setCancelingApplication] =
     useState<InvoiceApplication | null>(null)
   const [pagination, setPagination] = useState<PaginationState>({
     pageIndex: 0,
@@ -110,6 +114,27 @@ export function InvoiceApplicationsTable() {
     },
     onError: () => {
       toast.error(t('Submit failed'))
+    },
+  })
+
+  const cancelMutation = useMutation({
+    mutationFn: (id: number) => cancelInvoiceApplication(id),
+    onSuccess: async (result) => {
+      if (!result.success) {
+        toast.error(result.message || t('Cancel failed'))
+        return
+      }
+      toast.success(t('Invoice application canceled successfully'))
+      setCancelingApplication(null)
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['invoices', 'orders'] }),
+        queryClient.invalidateQueries({
+          queryKey: ['invoices', 'applications'],
+        }),
+      ])
+    },
+    onError: () => {
+      toast.error(t('Cancel failed'))
     },
   })
 
@@ -222,37 +247,63 @@ export function InvoiceApplicationsTable() {
         cell: ({ row }) => {
           const canDownload =
             row.original.status === 'approved' && row.original.has_pdf
+          const canCancel = row.original.status !== 'approved'
           if (row.original.status === 'rejected') {
             return (
+              <div className='flex items-center gap-1.5'>
+                <Button
+                  variant='default'
+                  size='sm'
+                  onClick={() => setEditingApplication(row.original)}
+                >
+                  <FilePenLine className='size-4' />
+                  {t('Edit and Resubmit')}
+                </Button>
+                <Button
+                  variant='outline'
+                  size='sm'
+                  onClick={() => setCancelingApplication(row.original)}
+                >
+                  <RotateCcw className='size-4' />
+                  {t('Cancel Application')}
+                </Button>
+              </div>
+            )
+          }
+          if (canDownload) {
+            return (
               <Button
-                variant='default'
+                variant='outline'
                 size='sm'
-                onClick={() => setEditingApplication(row.original)}
+                onClick={() => void handleDownload(row.original)}
+                disabled={downloadingId === row.original.id}
               >
-                <FilePenLine className='size-4' />
-                {t('Edit and Resubmit')}
+                <Download className='size-4' />
+                {downloadingId === row.original.id
+                  ? t('Downloading...')
+                  : t('Download PDF')}
               </Button>
             )
           }
-          return canDownload ? (
-            <Button
-              variant='outline'
-              size='sm'
-              onClick={() => void handleDownload(row.original)}
-              disabled={downloadingId === row.original.id}
-            >
-              <Download className='size-4' />
-              {downloadingId === row.original.id
-                ? t('Downloading...')
-                : t('Download PDF')}
-            </Button>
-          ) : (
+          if (canCancel) {
+            return (
+              <Button
+                variant='outline'
+                size='sm'
+                onClick={() => setCancelingApplication(row.original)}
+              >
+                <RotateCcw className='size-4' />
+                {t('Cancel Application')}
+              </Button>
+            )
+          }
+          return (
             <span className='text-muted-foreground text-sm'>
               {t('Not available')}
             </span>
           )
         },
-        size: 170,
+        size: 260,
         meta: { pinned: 'right' as const },
       },
     ],
@@ -284,6 +335,15 @@ export function InvoiceApplicationsTable() {
   const handleResubmit = async (values: InvoiceApplicationPayload) => {
     try {
       await submitMutation.mutateAsync(values)
+    } catch {
+      /* handled by mutation */
+    }
+  }
+
+  const handleCancel = async () => {
+    if (!cancelingApplication) return
+    try {
+      await cancelMutation.mutateAsync(cancelingApplication.id)
     } catch {
       /* handled by mutation */
     }
@@ -334,6 +394,43 @@ export function InvoiceApplicationsTable() {
         onOpenChange={(open) => !open && setEditingApplication(null)}
         onSubmit={handleResubmit}
       />
+      <Dialog
+        open={Boolean(cancelingApplication)}
+        onOpenChange={(open) => !open && setCancelingApplication(null)}
+        title={t('Cancel Invoice Application')}
+        description={t(
+          'After cancellation, the related orders can be selected for a new invoice application.'
+        )}
+        footer={
+          <>
+            <Button
+              type='button'
+              variant='outline'
+              onClick={() => setCancelingApplication(null)}
+              disabled={cancelMutation.isPending}
+            >
+              {t('Keep Application')}
+            </Button>
+            <Button
+              type='button'
+              variant='destructive'
+              onClick={() => void handleCancel()}
+              disabled={cancelMutation.isPending}
+            >
+              {cancelMutation.isPending
+                ? t('Processing...')
+                : t('Confirm Cancel')}
+            </Button>
+          </>
+        }
+      >
+        <div className='space-y-2 text-sm'>
+          <div className='font-medium'>{cancelingApplication?.title}</div>
+          <div className='text-muted-foreground'>
+            {t('This action cannot be undone.')}
+          </div>
+        </div>
+      </Dialog>
     </>
   )
 }

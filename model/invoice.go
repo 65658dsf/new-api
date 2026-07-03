@@ -222,20 +222,11 @@ func createInvoiceApplicationOrders(tx *gorm.DB, app *InvoiceApplication, topUps
 	return nil
 }
 
-func sameTradeNoSet(orders []InvoiceApplicationOrder, tradeNos []string) bool {
-	if len(orders) != len(tradeNos) {
-		return false
+func replaceInvoiceApplicationOrders(tx *gorm.DB, app *InvoiceApplication, topUps []TopUp, tradeNos []string, now int64) error {
+	if err := tx.Where("invoice_application_id = ?", app.Id).Delete(&InvoiceApplicationOrder{}).Error; err != nil {
+		return err
 	}
-	seen := make(map[string]struct{}, len(orders))
-	for _, order := range orders {
-		seen[order.TradeNo] = struct{}{}
-	}
-	for _, tradeNo := range tradeNos {
-		if _, ok := seen[tradeNo]; !ok {
-			return false
-		}
-	}
-	return true
+	return createInvoiceApplicationOrders(tx, app, topUps, tradeNos, now)
 }
 
 func attachInvoiceOrders(apps []*InvoiceApplication) error {
@@ -337,22 +328,13 @@ func SubmitInvoiceApplication(userId int, input InvoiceApplicationSubmit) (*Invo
 			if app.Status != InvoiceStatusRejected {
 				return errors.New("该订单已提交过开票申请")
 			}
-			var allExistingOrders []InvoiceApplicationOrder
-			if err := tx.Where("invoice_application_id = ?", app.Id).Find(&allExistingOrders).Error; err != nil {
-				return err
-			}
-			if !sameTradeNoSet(allExistingOrders, tradeNos) {
-				return errors.New("该订单已提交过开票申请")
-			}
 
 			now := common.GetTimestamp()
 			updateInvoiceApplicationForSubmit(app, input, topUps, tradeNos, now)
-			app.Orders = make([]*InvoiceApplicationOrder, 0, len(allExistingOrders))
-			for _, order := range allExistingOrders {
-				orderCopy := order
-				app.Orders = append(app.Orders, &orderCopy)
+			if err := tx.Save(app).Error; err != nil {
+				return err
 			}
-			return tx.Save(app).Error
+			return replaceInvoiceApplicationOrders(tx, app, topUps, tradeNos, now)
 		}
 
 		var legacyApps []InvoiceApplication
@@ -360,7 +342,7 @@ func SubmitInvoiceApplication(userId int, input InvoiceApplicationSubmit) (*Invo
 			return err
 		}
 		if len(legacyApps) > 0 {
-			if len(legacyApps) != 1 || len(tradeNos) != 1 {
+			if len(legacyApps) != 1 {
 				return errors.New("该订单已提交过开票申请")
 			}
 			*app = legacyApps[0]
@@ -655,6 +637,29 @@ func GetUserInvoiceApplicationById(userId int, id int) (*InvoiceApplication, err
 		return nil, err
 	}
 	return app, nil
+}
+
+func CancelUserInvoiceApplication(userId int, id int) error {
+	if id <= 0 {
+		return errors.New("开票申请不存在")
+	}
+
+	return DB.Transaction(func(tx *gorm.DB) error {
+		app := &InvoiceApplication{}
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("id = ? AND user_id = ?", id, userId).First(app).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errors.New("开票申请不存在")
+			}
+			return err
+		}
+		if app.Status == InvoiceStatusApproved {
+			return errors.New("已通过的开票申请不能撤销")
+		}
+		if err := tx.Where("invoice_application_id = ?", app.Id).Delete(&InvoiceApplicationOrder{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(app).Error
+	})
 }
 
 func ApproveInvoiceApplication(id int, adminId int, pdfFileName string, pdfPath string) (*InvoiceApplication, error) {

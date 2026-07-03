@@ -69,6 +69,20 @@ func GetUserInvoiceApplications(c *gin.Context) {
 	common.ApiSuccess(c, pageInfo)
 }
 
+func CancelUserInvoiceApplication(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		common.ApiErrorMsg(c, "参数错误")
+		return
+	}
+
+	if err := model.CancelUserInvoiceApplication(c.GetInt("id"), id); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, nil)
+}
+
 func DownloadUserInvoicePDF(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {

@@ -40,6 +40,10 @@ import type {
 } from '../types'
 import { InvoiceApplicationDialog } from './invoice-application-dialog'
 
+function canSelectInvoiceOrder(order: InvoiceTopUpRecord) {
+  return !order.invoice_applied || order.invoice_status === 'rejected'
+}
+
 export function InvoiceOrdersTable() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
@@ -103,7 +107,7 @@ export function InvoiceOrdersTable() {
     [selectedTradeNos]
   )
   const selectableRows = useMemo(
-    () => rows.filter((row) => !row.invoice_applied),
+    () => rows.filter((row) => canSelectInvoiceOrder(row)),
     [rows]
   )
   const selectedOrders = useMemo(
@@ -164,7 +168,7 @@ export function InvoiceOrdersTable() {
         cell: ({ row }) => (
           <Checkbox
             checked={selectedTradeNoSet.has(row.original.trade_no)}
-            disabled={row.original.invoice_applied}
+            disabled={!canSelectInvoiceOrder(row.original)}
             aria-label={t('Select invoiceable order')}
             onCheckedChange={(checked) =>
               setOrderSelected(row.original, checked === true)
