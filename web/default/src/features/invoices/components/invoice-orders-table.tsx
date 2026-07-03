@@ -26,6 +26,7 @@ import { toast } from 'sonner'
 import { DataTablePage, useDataTable } from '@/components/data-table'
 import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { formatBillingCurrencyFromUSD } from '@/lib/currency'
 import { formatTimestampToDate } from '@/lib/format'
@@ -43,9 +44,8 @@ export function InvoiceOrdersTable() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [keyword, setKeyword] = useState('')
-  const [selectedOrder, setSelectedOrder] = useState<InvoiceTopUpRecord | null>(
-    null
-  )
+  const [dialogOrders, setDialogOrders] = useState<InvoiceTopUpRecord[]>([])
+  const [selectedTradeNos, setSelectedTradeNos] = useState<string[]>([])
   const [pagination, setPagination] = useState<PaginationState>({
     pageIndex: 0,
     pageSize: 10,
@@ -82,7 +82,8 @@ export function InvoiceOrdersTable() {
         return
       }
       toast.success(t('Invoice application submitted successfully'))
-      setSelectedOrder(null)
+      setDialogOrders([])
+      setSelectedTradeNos([])
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['invoices', 'orders'] }),
         queryClient.invalidateQueries({
@@ -97,9 +98,82 @@ export function InvoiceOrdersTable() {
 
   const rows = ordersQuery.data?.items ?? []
   const total = ordersQuery.data?.total ?? 0
+  const selectedTradeNoSet = useMemo(
+    () => new Set(selectedTradeNos),
+    [selectedTradeNos]
+  )
+  const selectableRows = useMemo(
+    () => rows.filter((row) => !row.invoice_applied),
+    [rows]
+  )
+  const selectedOrders = useMemo(
+    () => rows.filter((row) => selectedTradeNoSet.has(row.trade_no)),
+    [rows, selectedTradeNoSet]
+  )
+  const allPageRowsSelected =
+    selectableRows.length > 0 &&
+    selectableRows.every((row) => selectedTradeNoSet.has(row.trade_no))
+
+  const setOrderSelected = useCallback(
+    (order: InvoiceTopUpRecord, checked: boolean) => {
+      setSelectedTradeNos((prev) => {
+        if (checked) {
+          if (prev.includes(order.trade_no)) return prev
+          return [...prev, order.trade_no]
+        }
+        return prev.filter((tradeNo) => tradeNo !== order.trade_no)
+      })
+    },
+    []
+  )
+
+  const setAllPageRowsSelected = useCallback(
+    (checked: boolean) => {
+      if (!checked) {
+        const currentTradeNos = new Set(rows.map((row) => row.trade_no))
+        setSelectedTradeNos((prev) =>
+          prev.filter((tradeNo) => !currentTradeNos.has(tradeNo))
+        )
+        return
+      }
+      setSelectedTradeNos((prev) => {
+        const next = new Set(prev)
+        for (const row of selectableRows) {
+          next.add(row.trade_no)
+        }
+        return [...next]
+      })
+    },
+    [rows, selectableRows]
+  )
 
   const columns = useMemo<ColumnDef<InvoiceTopUpRecord>[]>(
     () => [
+      {
+        id: 'select',
+        header: () => (
+          <Checkbox
+            checked={allPageRowsSelected}
+            disabled={selectableRows.length === 0}
+            aria-label={t('Select all invoiceable orders on this page')}
+            onCheckedChange={(checked) =>
+              setAllPageRowsSelected(checked === true)
+            }
+          />
+        ),
+        cell: ({ row }) => (
+          <Checkbox
+            checked={selectedTradeNoSet.has(row.original.trade_no)}
+            disabled={row.original.invoice_applied}
+            aria-label={t('Select invoiceable order')}
+            onCheckedChange={(checked) =>
+              setOrderSelected(row.original, checked === true)
+            }
+          />
+        ),
+        size: 48,
+        meta: { mobileHidden: true },
+      },
       {
         accessorKey: 'trade_no',
         header: t('Order Number'),
@@ -146,16 +220,21 @@ export function InvoiceOrdersTable() {
         id: 'actions',
         header: () => t('Actions'),
         cell: ({ row }) => {
-          const disabled = row.original.invoice_applied
+          const canResubmit = row.original.invoice_status === 'rejected'
+          const disabled = row.original.invoice_applied && !canResubmit
           return (
             <Button
               variant={disabled ? 'outline' : 'default'}
               size='sm'
-              onClick={() => setSelectedOrder(row.original)}
+              onClick={() => setDialogOrders([row.original])}
               disabled={disabled}
             >
               <FilePlus2 className='size-4' />
-              {disabled ? t('Applied') : t('Apply for Invoice')}
+              {canResubmit
+                ? t('Resubmit')
+                : disabled
+                  ? t('Applied')
+                  : t('Apply for Invoice')}
             </Button>
           )
         },
@@ -163,7 +242,14 @@ export function InvoiceOrdersTable() {
         meta: { pinned: 'right' as const },
       },
     ],
-    [t]
+    [
+      allPageRowsSelected,
+      selectableRows.length,
+      selectedTradeNoSet,
+      setAllPageRowsSelected,
+      setOrderSelected,
+      t,
+    ]
   )
 
   const { table } = useDataTable({
@@ -202,12 +288,22 @@ export function InvoiceOrdersTable() {
     }
   }
 
+  const openSelectedOrdersDialog = () => {
+    if (selectedOrders.length === 0) {
+      toast.error(t('Please select at least one order'))
+      return
+    }
+    setDialogOrders(selectedOrders)
+  }
+
   return (
     <div className='space-y-3'>
       <div>
         <h2 className='text-base font-semibold'>{t('Recharge Orders')}</h2>
         <p className='text-muted-foreground text-sm'>
-          {t('Paid recharge orders that can be used for invoice applications.')}
+          {t(
+            'Paid recharge orders that can be used for invoice applications. Multiple orders can be selected for one invoice.'
+          )}
         </p>
       </div>
       <DataTablePage
@@ -236,6 +332,19 @@ export function InvoiceOrdersTable() {
               />
             </div>
             <Button
+              variant='default'
+              size='sm'
+              onClick={openSelectedOrdersDialog}
+              disabled={selectedOrders.length === 0}
+            >
+              <FilePlus2 className='size-4' />
+              {selectedOrders.length > 0
+                ? t('{{count}} orders selected', {
+                    count: selectedOrders.length,
+                  })
+                : t('Apply for Selected Orders')}
+            </Button>
+            <Button
               variant='outline'
               size='sm'
               onClick={() => void ordersQuery.refetch()}
@@ -247,10 +356,10 @@ export function InvoiceOrdersTable() {
         }
       />
       <InvoiceApplicationDialog
-        open={Boolean(selectedOrder)}
-        order={selectedOrder}
+        open={dialogOrders.length > 0}
+        orders={dialogOrders}
         isSubmitting={submitMutation.isPending}
-        onOpenChange={(open) => !open && setSelectedOrder(null)}
+        onOpenChange={(open) => !open && setDialogOrders([])}
         onSubmit={handleSubmit}
       />
     </div>

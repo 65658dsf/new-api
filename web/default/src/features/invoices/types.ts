@@ -44,6 +44,17 @@ export interface InvoiceTopUpRecord {
   invoice_applied: boolean
 }
 
+export interface InvoiceApplicationOrder {
+  id?: number
+  invoice_application_id?: number
+  user_id?: number
+  topup_id?: number
+  trade_no: string
+  amount: number
+  money: number
+  created_at?: number
+}
+
 export interface InvoiceApplication {
   id: number
   user_id: number
@@ -65,11 +76,13 @@ export interface InvoiceApplication {
   handled_at?: number
   handler_id?: number
   user?: InvoiceUserInfo
+  orders?: InvoiceApplicationOrder[]
   has_pdf?: boolean
 }
 
 export interface InvoiceApplicationPayload {
   trade_no: string
+  trade_nos?: string[]
   title: string
   tax_id: string
   buyer_address: string

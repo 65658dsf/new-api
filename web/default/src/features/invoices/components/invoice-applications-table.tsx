@@ -18,22 +18,50 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import { useCallback, useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { type ColumnDef, type PaginationState } from '@tanstack/react-table'
-import { Download, RefreshCcw } from 'lucide-react'
+import { Download, FilePenLine, RefreshCcw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { DataTablePage, useDataTable } from '@/components/data-table'
 import { Button } from '@/components/ui/button'
 import { formatBillingCurrencyFromUSD } from '@/lib/currency'
 import { formatTimestampToDate } from '@/lib/format'
-import { downloadInvoicePDF, getUserInvoiceApplications } from '../api'
-import type { InvoiceApplication } from '../types'
+import {
+  downloadInvoicePDF,
+  getUserInvoiceApplications,
+  submitInvoiceApplication,
+} from '../api'
+import type {
+  InvoiceApplication,
+  InvoiceApplicationOrder,
+  InvoiceApplicationPayload,
+} from '../types'
+import { InvoiceApplicationDialog } from './invoice-application-dialog'
 import { InvoiceStatusBadge } from './invoice-status-badge'
+
+function invoiceOrderLines(
+  application: InvoiceApplication
+): InvoiceApplicationOrder[] {
+  if (application.orders?.length) {
+    return application.orders
+  }
+  return [
+    {
+      topup_id: application.topup_id,
+      trade_no: application.trade_no,
+      amount: application.amount,
+      money: application.money,
+    },
+  ]
+}
 
 export function InvoiceApplicationsTable() {
   const { t } = useTranslation()
+  const queryClient = useQueryClient()
   const [downloadingId, setDownloadingId] = useState<number | null>(null)
+  const [editingApplication, setEditingApplication] =
+    useState<InvoiceApplication | null>(null)
   const [pagination, setPagination] = useState<PaginationState>({
     pageIndex: 0,
     pageSize: 10,
@@ -62,6 +90,28 @@ export function InvoiceApplicationsTable() {
 
   const rows = applicationsQuery.data?.items ?? []
   const total = applicationsQuery.data?.total ?? 0
+
+  const submitMutation = useMutation({
+    mutationFn: (payload: InvoiceApplicationPayload) =>
+      submitInvoiceApplication(payload),
+    onSuccess: async (result) => {
+      if (!result.success) {
+        toast.error(result.message || t('Submit failed'))
+        return
+      }
+      toast.success(t('Invoice application resubmitted successfully'))
+      setEditingApplication(null)
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['invoices', 'orders'] }),
+        queryClient.invalidateQueries({
+          queryKey: ['invoices', 'applications'],
+        }),
+      ])
+    },
+    onError: () => {
+      toast.error(t('Submit failed'))
+    },
+  })
 
   const handleDownload = useCallback(
     async (application: InvoiceApplication) => {
@@ -100,22 +150,38 @@ export function InvoiceApplicationsTable() {
       {
         accessorKey: 'trade_no',
         header: t('Order Number'),
-        cell: ({ row }) => (
-          <div className='min-w-0'>
-            <div className='truncate font-mono text-sm'>
-              {row.original.trade_no}
+        cell: ({ row }) => {
+          const orders = invoiceOrderLines(row.original)
+          return (
+            <div className='min-w-0 space-y-1'>
+              {orders.slice(0, 3).map((order) => (
+                <div
+                  key={order.trade_no}
+                  className='flex min-w-0 items-center justify-between gap-3 text-sm'
+                >
+                  <span className='truncate font-mono'>{order.trade_no}</span>
+                  <span className='text-muted-foreground shrink-0 tabular-nums'>
+                    {formatBillingCurrencyFromUSD(order.amount)}
+                  </span>
+                </div>
+              ))}
+              {orders.length > 3 ? (
+                <div className='text-muted-foreground text-xs'>
+                  {t('{{count}} more orders', { count: orders.length - 3 })}
+                </div>
+              ) : null}
+              <div className='text-muted-foreground truncate text-xs'>
+                {row.original.title}
+              </div>
             </div>
-            <div className='text-muted-foreground truncate text-xs'>
-              {row.original.title}
-            </div>
-          </div>
-        ),
-        size: 260,
+          )
+        },
+        size: 320,
         meta: { mobileTitle: true },
       },
       {
         accessorKey: 'amount',
-        header: t('Order Amount'),
+        header: t('Total Amount'),
         cell: ({ row }) => formatBillingCurrencyFromUSD(row.original.amount),
         size: 130,
       },
@@ -156,6 +222,18 @@ export function InvoiceApplicationsTable() {
         cell: ({ row }) => {
           const canDownload =
             row.original.status === 'approved' && row.original.has_pdf
+          if (row.original.status === 'rejected') {
+            return (
+              <Button
+                variant='default'
+                size='sm'
+                onClick={() => setEditingApplication(row.original)}
+              >
+                <FilePenLine className='size-4' />
+                {t('Edit and Resubmit')}
+              </Button>
+            )
+          }
           return canDownload ? (
             <Button
               variant='outline'
@@ -203,40 +281,59 @@ export function InvoiceApplicationsTable() {
     ),
   })
 
+  const handleResubmit = async (values: InvoiceApplicationPayload) => {
+    try {
+      await submitMutation.mutateAsync(values)
+    } catch {
+      /* handled by mutation */
+    }
+  }
+
   return (
-    <div className='space-y-3'>
-      <div>
-        <h2 className='text-base font-semibold'>
-          {t('Invoice Applications')}
-        </h2>
-        <p className='text-muted-foreground text-sm'>
-          {t('Track invoice review status and download approved PDFs.')}
-        </p>
+    <>
+      <div className='space-y-3'>
+        <div>
+          <h2 className='text-base font-semibold'>
+            {t('Invoice Applications')}
+          </h2>
+          <p className='text-muted-foreground text-sm'>
+            {t('Track invoice review status and download approved PDFs.')}
+          </p>
+        </div>
+        <DataTablePage
+          table={table}
+          columns={columns}
+          isLoading={applicationsQuery.isLoading}
+          isFetching={applicationsQuery.isFetching}
+          emptyTitle={t('No invoice applications found')}
+          emptyDescription={t(
+            'Submitted invoice applications will appear here.'
+          )}
+          skeletonKeyPrefix='invoice-applications-skeleton'
+          applyHeaderSize
+          fixedHeight={false}
+          paginationInFooter={false}
+          toolbar={
+            <div className='flex justify-end'>
+              <Button
+                variant='outline'
+                size='sm'
+                onClick={() => void applicationsQuery.refetch()}
+              >
+                <RefreshCcw className='size-4' />
+                {t('Refresh')}
+              </Button>
+            </div>
+          }
+        />
       </div>
-      <DataTablePage
-        table={table}
-        columns={columns}
-        isLoading={applicationsQuery.isLoading}
-        isFetching={applicationsQuery.isFetching}
-        emptyTitle={t('No invoice applications found')}
-        emptyDescription={t('Submitted invoice applications will appear here.')}
-        skeletonKeyPrefix='invoice-applications-skeleton'
-        applyHeaderSize
-        fixedHeight={false}
-        paginationInFooter={false}
-        toolbar={
-          <div className='flex justify-end'>
-            <Button
-              variant='outline'
-              size='sm'
-              onClick={() => void applicationsQuery.refetch()}
-            >
-              <RefreshCcw className='size-4' />
-              {t('Refresh')}
-            </Button>
-          </div>
-        }
+      <InvoiceApplicationDialog
+        open={Boolean(editingApplication)}
+        application={editingApplication}
+        isSubmitting={submitMutation.isPending}
+        onOpenChange={(open) => !open && setEditingApplication(null)}
+        onSubmit={handleResubmit}
       />
-    </div>
+    </>
   )
 }

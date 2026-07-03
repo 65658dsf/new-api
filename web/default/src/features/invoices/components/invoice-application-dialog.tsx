@@ -35,7 +35,13 @@ import {
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import type { InvoiceTopUpRecord } from '../types'
+import { formatBillingCurrencyFromUSD } from '@/lib/currency'
+import type {
+  InvoiceApplication,
+  InvoiceApplicationOrder,
+  InvoiceApplicationPayload,
+  InvoiceTopUpRecord,
+} from '../types'
 import {
   getInvoiceApplicationSchema,
   INVOICE_APPLICATION_DEFAULT_VALUES,
@@ -44,10 +50,39 @@ import {
 
 type InvoiceApplicationDialogProps = {
   open: boolean
-  order: InvoiceTopUpRecord | null
+  orders?: InvoiceTopUpRecord[]
+  application?: InvoiceApplication | null
   isSubmitting: boolean
   onOpenChange: (open: boolean) => void
-  onSubmit: (values: InvoiceApplicationFormValues) => Promise<void>
+  onSubmit: (values: InvoiceApplicationPayload) => Promise<void>
+}
+
+function invoiceOrderLines(
+  application?: InvoiceApplication | null,
+  orders?: InvoiceTopUpRecord[]
+): InvoiceApplicationOrder[] {
+  if (application?.orders?.length) {
+    return application.orders
+  }
+  if (orders?.length) {
+    return orders.map((order) => ({
+      topup_id: order.id,
+      trade_no: order.trade_no,
+      amount: order.amount,
+      money: order.money,
+    }))
+  }
+  if (application?.trade_no) {
+    return [
+      {
+        topup_id: application.topup_id,
+        trade_no: application.trade_no,
+        amount: application.amount,
+        money: application.money,
+      },
+    ]
+  }
+  return []
 }
 
 export function InvoiceApplicationDialog(
@@ -58,6 +93,9 @@ export function InvoiceApplicationDialog(
     resolver: zodResolver(getInvoiceApplicationSchema(t)),
     defaultValues: INVOICE_APPLICATION_DEFAULT_VALUES,
   })
+  const orderLines = invoiceOrderLines(props.application, props.orders)
+  const firstTradeNo = orderLines[0]?.trade_no ?? ''
+  const totalAmount = orderLines.reduce((sum, order) => sum + order.amount, 0)
 
   useEffect(() => {
     if (!props.open) {
@@ -66,20 +104,45 @@ export function InvoiceApplicationDialog(
     }
     form.reset({
       ...INVOICE_APPLICATION_DEFAULT_VALUES,
-      trade_no: props.order?.trade_no ?? '',
+      trade_no: firstTradeNo,
+      title: props.application?.title ?? '',
+      tax_id: props.application?.tax_id ?? '',
+      buyer_address: props.application?.buyer_address ?? '',
+      buyer_phone: props.application?.buyer_phone ?? '',
+      bank_name: props.application?.bank_name ?? '',
+      bank_account: props.application?.bank_account ?? '',
     })
-  }, [form, props.open, props.order])
+  }, [firstTradeNo, form, props.application, props.open])
 
   const handleInvalidSubmit = () => {
     toast.error(t('Please check the invoice form'))
+  }
+
+  const handleValidSubmit = async (values: InvoiceApplicationFormValues) => {
+    const tradeNos = orderLines.map((order) => order.trade_no)
+    await props.onSubmit({
+      ...values,
+      trade_no: tradeNos[0] ?? values.trade_no,
+      trade_nos: tradeNos,
+    })
   }
 
   return (
     <Dialog
       open={props.open}
       onOpenChange={props.onOpenChange}
-      title={t('Apply for Invoice')}
-      description={t('Fill in the buyer invoice title information.')}
+      title={
+        props.application
+          ? t('Resubmit Invoice Application')
+          : t('Apply for Invoice')
+      }
+      description={
+        props.application
+          ? t(
+              'Update invoice title information and submit it for review again.'
+            )
+          : t('Fill in the buyer invoice title information.')
+      }
       contentClassName='sm:max-w-3xl'
       bodyClassName='space-y-4'
       footer={
@@ -97,7 +160,11 @@ export function InvoiceApplicationDialog(
             form='invoice-application-form'
             disabled={props.isSubmitting}
           >
-            {props.isSubmitting ? t('Submitting...') : t('Submit Application')}
+            {props.isSubmitting
+              ? t('Submitting...')
+              : props.application
+                ? t('Resubmit Application')
+                : t('Submit Application')}
           </Button>
         </>
       }
@@ -106,26 +173,43 @@ export function InvoiceApplicationDialog(
         <form
           id='invoice-application-form'
           className='space-y-4'
-          onSubmit={form.handleSubmit(props.onSubmit, handleInvalidSubmit)}
+          onSubmit={form.handleSubmit(handleValidSubmit, handleInvalidSubmit)}
         >
-          <div className='grid gap-4 sm:grid-cols-2'>
-            <FormField
-              control={form.control}
-              name='trade_no'
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('Order Number')}</FormLabel>
-                  <FormControl>
-                    <Input {...field} readOnly className='font-mono' />
-                  </FormControl>
-                  <FormDescription>
-                    {t('The order number is filled automatically.')}
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+          <FormField
+            control={form.control}
+            name='trade_no'
+            render={({ field }) => <input type='hidden' {...field} />}
+          />
 
+          <div className='space-y-2'>
+            <div className='text-sm font-medium'>{t('Selected Orders')}</div>
+            <div className='border-border divide-border overflow-hidden rounded-md border'>
+              {orderLines.map((order) => (
+                <div
+                  key={order.trade_no}
+                  className='flex flex-col gap-1 px-3 py-2 sm:flex-row sm:items-center sm:justify-between'
+                >
+                  <span className='truncate font-mono text-sm'>
+                    {order.trade_no}
+                  </span>
+                  <span className='text-sm font-medium tabular-nums'>
+                    {formatBillingCurrencyFromUSD(order.amount)}
+                  </span>
+                </div>
+              ))}
+              <div className='bg-muted/40 flex items-center justify-between px-3 py-2 text-sm font-semibold'>
+                <span>{t('Total Amount')}</span>
+                <span className='tabular-nums'>
+                  {formatBillingCurrencyFromUSD(totalAmount)}
+                </span>
+              </div>
+            </div>
+            <p className='text-muted-foreground text-xs'>
+              {t('The selected order numbers are submitted automatically.')}
+            </p>
+          </div>
+
+          <div className='grid gap-4 sm:grid-cols-2'>
             <FormField
               control={form.control}
               name='title'

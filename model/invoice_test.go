@@ -74,6 +74,63 @@ func TestSubmitInvoiceApplicationCreatesPendingApplication(t *testing.T) {
 	assert.Equal(t, InvoiceStatusPending, app.Status)
 	assert.False(t, app.HasPdf)
 	assert.Greater(t, app.CreatedAt, int64(0))
+	require.Len(t, app.Orders, 1)
+	assert.Equal(t, topUp.TradeNo, app.Orders[0].TradeNo)
+	assert.Equal(t, topUp.Amount, app.Orders[0].Amount)
+}
+
+func TestSubmitInvoiceApplicationSupportsMultipleOrders(t *testing.T) {
+	truncateTables(t)
+
+	user := createInvoiceTestUser(t, "multi")
+	firstTopUp := createInvoiceTestTopUp(t, user.Id, "invoice_multi_first", common.TopUpStatusSuccess)
+	secondTopUp := createInvoiceTestTopUp(t, user.Id, "invoice_multi_second", common.TopUpStatusSuccess)
+
+	input := validInvoiceSubmit("")
+	input.TradeNo = ""
+	input.TradeNos = []string{firstTopUp.TradeNo, secondTopUp.TradeNo}
+	app, err := SubmitInvoiceApplication(user.Id, input)
+	require.NoError(t, err)
+
+	assert.Equal(t, firstTopUp.TradeNo, app.TradeNo)
+	assert.Equal(t, firstTopUp.Amount+secondTopUp.Amount, app.Amount)
+	assert.Equal(t, firstTopUp.Money+secondTopUp.Money, app.Money)
+	require.Len(t, app.Orders, 2)
+	assert.Equal(t, firstTopUp.TradeNo, app.Orders[0].TradeNo)
+	assert.Equal(t, firstTopUp.Amount, app.Orders[0].Amount)
+	assert.Equal(t, secondTopUp.TradeNo, app.Orders[1].TradeNo)
+	assert.Equal(t, secondTopUp.Amount, app.Orders[1].Amount)
+
+	_, err = SubmitInvoiceApplication(user.Id, validInvoiceSubmit(secondTopUp.TradeNo))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "已提交过开票申请")
+}
+
+func TestSubmitInvoiceApplicationResubmitsRejectedMultipleOrders(t *testing.T) {
+	truncateTables(t)
+
+	user := createInvoiceTestUser(t, "multi_resubmit")
+	admin := createInvoiceTestUser(t, "multi_resubmit_admin")
+	firstTopUp := createInvoiceTestTopUp(t, user.Id, "invoice_multi_resubmit_first", common.TopUpStatusSuccess)
+	secondTopUp := createInvoiceTestTopUp(t, user.Id, "invoice_multi_resubmit_second", common.TopUpStatusSuccess)
+
+	input := validInvoiceSubmit("")
+	input.TradeNo = ""
+	input.TradeNos = []string{firstTopUp.TradeNo, secondTopUp.TradeNo}
+	app, err := SubmitInvoiceApplication(user.Id, input)
+	require.NoError(t, err)
+	app, err = RejectInvoiceApplication(app.Id, admin.Id, "tax id mismatch")
+	require.NoError(t, err)
+
+	input.Title = "Updated Multi Technology Co Ltd"
+	resubmitted, err := SubmitInvoiceApplication(user.Id, input)
+	require.NoError(t, err)
+
+	assert.Equal(t, app.Id, resubmitted.Id)
+	assert.Equal(t, InvoiceStatusPending, resubmitted.Status)
+	assert.Equal(t, "Updated Multi Technology Co Ltd", resubmitted.Title)
+	assert.Equal(t, firstTopUp.Amount+secondTopUp.Amount, resubmitted.Amount)
+	require.Len(t, resubmitted.Orders, 2)
 }
 
 func TestSubmitInvoiceApplicationRequiresOwnedSuccessfulTopUp(t *testing.T) {
@@ -105,6 +162,34 @@ func TestSubmitInvoiceApplicationRejectsDuplicateTradeNo(t *testing.T) {
 	_, err = SubmitInvoiceApplication(user.Id, validInvoiceSubmit(topUp.TradeNo))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "已提交过开票申请")
+}
+
+func TestSubmitInvoiceApplicationAllowsRejectedApplicationResubmit(t *testing.T) {
+	truncateTables(t)
+
+	user := createInvoiceTestUser(t, "resubmit")
+	admin := createInvoiceTestUser(t, "resubmit_admin")
+	topUp := createInvoiceTestTopUp(t, user.Id, "invoice_resubmit_order", common.TopUpStatusSuccess)
+
+	app, err := SubmitInvoiceApplication(user.Id, validInvoiceSubmit(topUp.TradeNo))
+	require.NoError(t, err)
+	app, err = RejectInvoiceApplication(app.Id, admin.Id, "title mismatch")
+	require.NoError(t, err)
+	assert.Equal(t, InvoiceStatusRejected, app.Status)
+
+	input := validInvoiceSubmit(topUp.TradeNo)
+	input.Title = "Updated Technology Co Ltd"
+	input.TaxId = "91350211M000100Y44"
+	resubmitted, err := SubmitInvoiceApplication(user.Id, input)
+	require.NoError(t, err)
+
+	assert.Equal(t, app.Id, resubmitted.Id)
+	assert.Equal(t, InvoiceStatusPending, resubmitted.Status)
+	assert.Equal(t, "Updated Technology Co Ltd", resubmitted.Title)
+	assert.Equal(t, "91350211M000100Y44", resubmitted.TaxId)
+	assert.Empty(t, resubmitted.RejectReason)
+	assert.Zero(t, resubmitted.HandlerId)
+	assert.Zero(t, resubmitted.HandledAt)
 }
 
 func TestGetUserInvoiceTopUpRecordsMarksAppliedOrders(t *testing.T) {

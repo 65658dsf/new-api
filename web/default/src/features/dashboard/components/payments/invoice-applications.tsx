@@ -20,7 +20,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { useCallback, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { type ColumnDef, type PaginationState } from '@tanstack/react-table'
-import { CheckCircle2, RefreshCcw, Search, XCircle } from 'lucide-react'
+import { CheckCircle2, Copy, RefreshCcw, Search, XCircle } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { DataTablePage, useDataTable } from '@/components/data-table'
@@ -45,6 +45,7 @@ import {
 } from '@/features/invoices/api'
 import type {
   InvoiceApplication,
+  InvoiceApplicationOrder,
   InvoiceStatus,
 } from '@/features/invoices/types'
 import { InvoiceStatusBadge } from '@/features/invoices/components/invoice-status-badge'
@@ -77,6 +78,23 @@ function isValidPdfFile(file: File | null) {
   )
 }
 
+function invoiceOrderLines(
+  application?: InvoiceApplication | null
+): InvoiceApplicationOrder[] {
+  if (!application) return []
+  if (application.orders?.length) {
+    return application.orders
+  }
+  return [
+    {
+      topup_id: application.topup_id,
+      trade_no: application.trade_no,
+      amount: application.amount,
+      money: application.money,
+    },
+  ]
+}
+
 function InfoBlock(props: { primary?: string; secondary?: string }) {
   return (
     <div className='min-w-0'>
@@ -86,6 +104,15 @@ function InfoBlock(props: { primary?: string; secondary?: string }) {
           {props.secondary}
         </div>
       ) : null}
+    </div>
+  )
+}
+
+function InvoiceDetailRow(props: { label: string; value?: string }) {
+  return (
+    <div className='grid gap-1 text-sm sm:grid-cols-[120px_1fr]'>
+      <div className='text-muted-foreground'>{props.label}</div>
+      <div className='min-w-0 break-words'>{props.value || '-'}</div>
     </div>
   )
 }
@@ -245,6 +272,47 @@ export function InvoiceApplications() {
     }
   }
 
+  const buildInvoiceCopyText = useCallback(
+    (application: InvoiceApplication) => {
+      const orders = invoiceOrderLines(application)
+      const orderText = orders
+        .map(
+          (order) =>
+            `${order.trade_no} ${formatBillingCurrencyFromUSD(order.amount)}`
+        )
+        .join('\n')
+      return [
+        `${t('Applicant')}: ${applicantName(application)}`,
+        `${t('Order Numbers')}:`,
+        orderText,
+        `${t('Total Amount')}: ${formatBillingCurrencyFromUSD(application.amount)}`,
+        `${t('Invoice Title')}: ${application.title}`,
+        `${t('Unified Social Credit Code / Taxpayer ID')}: ${application.tax_id}`,
+        `${t('Buyer Address')}: ${application.buyer_address || '-'}`,
+        `${t('Phone')}: ${application.buyer_phone || '-'}`,
+        `${t('Buyer Bank')}: ${application.bank_name || '-'}`,
+        `${t('Bank Account')}: ${application.bank_account || '-'}`,
+      ].join('\n')
+    },
+    [t]
+  )
+
+  const copyInvoiceInfo = useCallback(async () => {
+    if (!approvingApplication) return
+    if (!navigator.clipboard?.writeText) {
+      toast.error(t('Failed to copy invoice info'))
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(
+        buildInvoiceCopyText(approvingApplication)
+      )
+      toast.success(t('Invoice info copied'))
+    } catch {
+      toast.error(t('Failed to copy invoice info'))
+    }
+  }, [approvingApplication, buildInvoiceCopyText, t])
+
   const columns = useMemo<ColumnDef<InvoiceApplication>[]>(
     () => [
       {
@@ -271,13 +339,33 @@ export function InvoiceApplications() {
       {
         accessorKey: 'trade_no',
         header: t('Order Number'),
-        cell: ({ row }) => (
-          <InfoBlock
-            primary={row.original.trade_no}
-            secondary={formatBillingCurrencyFromUSD(row.original.amount)}
-          />
-        ),
-        size: 240,
+        cell: ({ row }) => {
+          const orders = invoiceOrderLines(row.original)
+          return (
+            <div className='min-w-0 space-y-1'>
+              {orders.slice(0, 3).map((order) => (
+                <div
+                  key={order.trade_no}
+                  className='flex min-w-0 items-center justify-between gap-3 text-sm'
+                >
+                  <span className='truncate font-mono'>{order.trade_no}</span>
+                  <span className='text-muted-foreground shrink-0 tabular-nums'>
+                    {formatBillingCurrencyFromUSD(order.amount)}
+                  </span>
+                </div>
+              ))}
+              {orders.length > 3 ? (
+                <div className='text-muted-foreground text-xs'>
+                  {t('{{count}} more orders', { count: orders.length - 3 })}
+                </div>
+              ) : null}
+              <div className='text-muted-foreground text-xs font-medium'>
+                {t('Total Amount')}: {formatBillingCurrencyFromUSD(row.original.amount)}
+              </div>
+            </div>
+          )
+        },
+        size: 320,
       },
       {
         accessorKey: 'title',
@@ -477,10 +565,75 @@ export function InvoiceApplications() {
         }
       >
         <div className='space-y-3'>
-          <InfoBlock
-            primary={approvingApplication?.trade_no}
-            secondary={approvingApplication?.title}
-          />
+          {approvingApplication ? (
+            <div className='border-border space-y-3 rounded-md border p-3'>
+              <div className='flex items-center justify-between gap-2'>
+                <div className='text-sm font-medium'>
+                  {t('Invoice Information')}
+                </div>
+                <Button
+                  type='button'
+                  variant='outline'
+                  size='sm'
+                  onClick={() => void copyInvoiceInfo()}
+                >
+                  <Copy className='size-4' />
+                  {t('Copy Invoice Info')}
+                </Button>
+              </div>
+              <div className='space-y-2'>
+                <InvoiceDetailRow
+                  label={t('Applicant')}
+                  value={applicantName(approvingApplication)}
+                />
+                <InvoiceDetailRow
+                  label={t('Invoice Title')}
+                  value={approvingApplication.title}
+                />
+                <InvoiceDetailRow
+                  label={t('Unified Social Credit Code / Taxpayer ID')}
+                  value={approvingApplication.tax_id}
+                />
+                <InvoiceDetailRow
+                  label={t('Buyer Address')}
+                  value={approvingApplication.buyer_address}
+                />
+                <InvoiceDetailRow
+                  label={t('Phone')}
+                  value={approvingApplication.buyer_phone}
+                />
+                <InvoiceDetailRow
+                  label={t('Buyer Bank')}
+                  value={approvingApplication.bank_name}
+                />
+                <InvoiceDetailRow
+                  label={t('Bank Account')}
+                  value={approvingApplication.bank_account}
+                />
+              </div>
+              <div className='border-border divide-border overflow-hidden rounded-md border'>
+                {invoiceOrderLines(approvingApplication).map((order) => (
+                  <div
+                    key={order.trade_no}
+                    className='flex flex-col gap-1 px-3 py-2 sm:flex-row sm:items-center sm:justify-between'
+                  >
+                    <span className='truncate font-mono text-sm'>
+                      {order.trade_no}
+                    </span>
+                    <span className='text-sm font-medium tabular-nums'>
+                      {formatBillingCurrencyFromUSD(order.amount)}
+                    </span>
+                  </div>
+                ))}
+                <div className='bg-muted/40 flex items-center justify-between px-3 py-2 text-sm font-semibold'>
+                  <span>{t('Total Amount')}</span>
+                  <span className='tabular-nums'>
+                    {formatBillingCurrencyFromUSD(approvingApplication.amount)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          ) : null}
           <Input
             type='file'
             accept='application/pdf,.pdf'

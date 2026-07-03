@@ -18,38 +18,51 @@ const (
 )
 
 type InvoiceApplication struct {
-	Id           int            `json:"id"`
-	UserId       int            `json:"user_id" gorm:"index;not null"`
-	TopUpId      int            `json:"topup_id" gorm:"index;not null"`
-	TradeNo      string         `json:"trade_no" gorm:"type:varchar(255);uniqueIndex;not null"`
-	Amount       int64          `json:"amount"`
-	Money        float64        `json:"money"`
-	Title        string         `json:"title" gorm:"type:varchar(255);not null"`
-	TaxId        string         `json:"tax_id" gorm:"type:varchar(64);not null;index"`
-	BuyerAddress string         `json:"buyer_address" gorm:"type:varchar(255)"`
-	BuyerPhone   string         `json:"buyer_phone" gorm:"type:varchar(64)"`
-	BankName     string         `json:"bank_name" gorm:"type:varchar(255)"`
-	BankAccount  string         `json:"bank_account" gorm:"type:varchar(128)"`
-	Status       string         `json:"status" gorm:"type:varchar(20);index;not null"`
-	RejectReason string         `json:"reject_reason" gorm:"type:text"`
-	PdfPath      string         `json:"-" gorm:"type:varchar(512)"`
-	PdfFileName  string         `json:"pdf_file_name,omitempty" gorm:"type:varchar(255)"`
-	CreatedAt    int64          `json:"created_at" gorm:"index"`
-	UpdatedAt    int64          `json:"updated_at"`
-	HandledAt    int64          `json:"handled_at"`
-	HandlerId    int            `json:"handler_id"`
-	User         *TopUpUserInfo `json:"user,omitempty" gorm:"-"`
-	HasPdf       bool           `json:"has_pdf" gorm:"-"`
+	Id           int                        `json:"id"`
+	UserId       int                        `json:"user_id" gorm:"index;not null"`
+	TopUpId      int                        `json:"topup_id" gorm:"index;not null"`
+	TradeNo      string                     `json:"trade_no" gorm:"type:varchar(255);uniqueIndex;not null"`
+	Amount       int64                      `json:"amount"`
+	Money        float64                    `json:"money"`
+	Title        string                     `json:"title" gorm:"type:varchar(255);not null"`
+	TaxId        string                     `json:"tax_id" gorm:"type:varchar(64);not null;index"`
+	BuyerAddress string                     `json:"buyer_address" gorm:"type:varchar(255)"`
+	BuyerPhone   string                     `json:"buyer_phone" gorm:"type:varchar(64)"`
+	BankName     string                     `json:"bank_name" gorm:"type:varchar(255)"`
+	BankAccount  string                     `json:"bank_account" gorm:"type:varchar(128)"`
+	Status       string                     `json:"status" gorm:"type:varchar(20);index;not null"`
+	RejectReason string                     `json:"reject_reason" gorm:"type:text"`
+	PdfPath      string                     `json:"-" gorm:"type:varchar(512)"`
+	PdfFileName  string                     `json:"pdf_file_name,omitempty" gorm:"type:varchar(255)"`
+	CreatedAt    int64                      `json:"created_at" gorm:"index"`
+	UpdatedAt    int64                      `json:"updated_at"`
+	HandledAt    int64                      `json:"handled_at"`
+	HandlerId    int                        `json:"handler_id"`
+	User         *TopUpUserInfo             `json:"user,omitempty" gorm:"-"`
+	Orders       []*InvoiceApplicationOrder `json:"orders,omitempty" gorm:"-"`
+	HasPdf       bool                       `json:"has_pdf" gorm:"-"`
+}
+
+type InvoiceApplicationOrder struct {
+	Id                   int     `json:"id"`
+	InvoiceApplicationId int     `json:"invoice_application_id" gorm:"index;not null"`
+	UserId               int     `json:"user_id" gorm:"index;not null"`
+	TopUpId              int     `json:"topup_id" gorm:"uniqueIndex;not null"`
+	TradeNo              string  `json:"trade_no" gorm:"type:varchar(255);uniqueIndex;not null"`
+	Amount               int64   `json:"amount"`
+	Money                float64 `json:"money"`
+	CreatedAt            int64   `json:"created_at"`
 }
 
 type InvoiceApplicationSubmit struct {
-	TradeNo      string `json:"trade_no"`
-	Title        string `json:"title"`
-	TaxId        string `json:"tax_id"`
-	BuyerAddress string `json:"buyer_address"`
-	BuyerPhone   string `json:"buyer_phone"`
-	BankName     string `json:"bank_name"`
-	BankAccount  string `json:"bank_account"`
+	TradeNo      string   `json:"trade_no"`
+	TradeNos     []string `json:"trade_nos"`
+	Title        string   `json:"title"`
+	TaxId        string   `json:"tax_id"`
+	BuyerAddress string   `json:"buyer_address"`
+	BuyerPhone   string   `json:"buyer_phone"`
+	BankName     string   `json:"bank_name"`
+	BankAccount  string   `json:"bank_account"`
 }
 
 type InvoiceApplicationQueryOptions struct {
@@ -71,8 +84,16 @@ var (
 )
 
 func normalizeInvoiceApplicationInput(input InvoiceApplicationSubmit) InvoiceApplicationSubmit {
+	tradeNos := make([]string, 0, len(input.TradeNos))
+	for _, tradeNo := range input.TradeNos {
+		tradeNo = strings.TrimSpace(tradeNo)
+		if tradeNo != "" {
+			tradeNos = append(tradeNos, tradeNo)
+		}
+	}
 	return InvoiceApplicationSubmit{
 		TradeNo:      strings.TrimSpace(input.TradeNo),
+		TradeNos:     tradeNos,
 		Title:        strings.TrimSpace(input.Title),
 		TaxId:        strings.ToUpper(strings.TrimSpace(input.TaxId)),
 		BuyerAddress: strings.TrimSpace(input.BuyerAddress),
@@ -80,6 +101,28 @@ func normalizeInvoiceApplicationInput(input InvoiceApplicationSubmit) InvoiceApp
 		BankName:     strings.TrimSpace(input.BankName),
 		BankAccount:  strings.TrimSpace(input.BankAccount),
 	}
+}
+
+func invoiceApplicationTradeNos(input InvoiceApplicationSubmit) []string {
+	source := input.TradeNos
+	if len(source) == 0 && strings.TrimSpace(input.TradeNo) != "" {
+		source = []string{input.TradeNo}
+	}
+
+	seen := make(map[string]struct{}, len(source))
+	tradeNos := make([]string, 0, len(source))
+	for _, tradeNo := range source {
+		tradeNo = strings.TrimSpace(tradeNo)
+		if tradeNo == "" {
+			continue
+		}
+		if _, ok := seen[tradeNo]; ok {
+			continue
+		}
+		seen[tradeNo] = struct{}{}
+		tradeNos = append(tradeNos, tradeNo)
+	}
+	return tradeNos
 }
 
 func ValidateInvoiceApplicationInput(input InvoiceApplicationSubmit) error {
@@ -108,6 +151,140 @@ func markInvoicePdfReady(app *InvoiceApplication) {
 	}
 }
 
+func invoiceApplicationSummary(topUps []TopUp, tradeNos []string) (TopUp, int64, float64) {
+	topUpByTradeNo := make(map[string]TopUp, len(topUps))
+	for _, topUp := range topUps {
+		topUpByTradeNo[topUp.TradeNo] = topUp
+	}
+
+	var first TopUp
+	var totalAmount int64
+	var totalMoney float64
+	for idx, tradeNo := range tradeNos {
+		topUp := topUpByTradeNo[tradeNo]
+		if idx == 0 {
+			first = topUp
+		}
+		totalAmount += topUp.Amount
+		totalMoney += topUp.Money
+	}
+	return first, totalAmount, totalMoney
+}
+
+func updateInvoiceApplicationForSubmit(app *InvoiceApplication, input InvoiceApplicationSubmit, topUps []TopUp, tradeNos []string, now int64) {
+	firstTopUp, totalAmount, totalMoney := invoiceApplicationSummary(topUps, tradeNos)
+	app.TopUpId = firstTopUp.Id
+	app.TradeNo = firstTopUp.TradeNo
+	app.Amount = totalAmount
+	app.Money = totalMoney
+	app.Title = input.Title
+	app.TaxId = input.TaxId
+	app.BuyerAddress = input.BuyerAddress
+	app.BuyerPhone = input.BuyerPhone
+	app.BankName = input.BankName
+	app.BankAccount = input.BankAccount
+	app.Status = InvoiceStatusPending
+	app.RejectReason = ""
+	app.PdfPath = ""
+	app.PdfFileName = ""
+	app.CreatedAt = now
+	app.UpdatedAt = now
+	app.HandledAt = 0
+	app.HandlerId = 0
+}
+
+func createInvoiceApplicationOrders(tx *gorm.DB, app *InvoiceApplication, topUps []TopUp, tradeNos []string, now int64) error {
+	topUpByTradeNo := make(map[string]TopUp, len(topUps))
+	for _, topUp := range topUps {
+		topUpByTradeNo[topUp.TradeNo] = topUp
+	}
+
+	orders := make([]*InvoiceApplicationOrder, 0, len(tradeNos))
+	for _, tradeNo := range tradeNos {
+		topUp := topUpByTradeNo[tradeNo]
+		orders = append(orders, &InvoiceApplicationOrder{
+			InvoiceApplicationId: app.Id,
+			UserId:               app.UserId,
+			TopUpId:              topUp.Id,
+			TradeNo:              topUp.TradeNo,
+			Amount:               topUp.Amount,
+			Money:                topUp.Money,
+			CreatedAt:            now,
+		})
+	}
+	if len(orders) == 0 {
+		return nil
+	}
+	if err := tx.Create(&orders).Error; err != nil {
+		return err
+	}
+	app.Orders = orders
+	return nil
+}
+
+func sameTradeNoSet(orders []InvoiceApplicationOrder, tradeNos []string) bool {
+	if len(orders) != len(tradeNos) {
+		return false
+	}
+	seen := make(map[string]struct{}, len(orders))
+	for _, order := range orders {
+		seen[order.TradeNo] = struct{}{}
+	}
+	for _, tradeNo := range tradeNos {
+		if _, ok := seen[tradeNo]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func attachInvoiceOrders(apps []*InvoiceApplication) error {
+	if len(apps) == 0 {
+		return nil
+	}
+
+	appIds := make([]int, 0, len(apps))
+	appById := make(map[int]*InvoiceApplication, len(apps))
+	for _, app := range apps {
+		if app == nil || app.Id <= 0 {
+			continue
+		}
+		appIds = append(appIds, app.Id)
+		appById[app.Id] = app
+	}
+	if len(appIds) == 0 {
+		return nil
+	}
+
+	var orders []InvoiceApplicationOrder
+	if err := DB.Where("invoice_application_id IN ?", appIds).Order("id asc").Find(&orders).Error; err != nil {
+		return err
+	}
+	for _, order := range orders {
+		if app, ok := appById[order.InvoiceApplicationId]; ok {
+			orderCopy := order
+			app.Orders = append(app.Orders, &orderCopy)
+		}
+	}
+	for _, app := range apps {
+		if app == nil || len(app.Orders) > 0 || app.TradeNo == "" {
+			continue
+		}
+		app.Orders = []*InvoiceApplicationOrder{
+			{
+				InvoiceApplicationId: app.Id,
+				UserId:               app.UserId,
+				TopUpId:              app.TopUpId,
+				TradeNo:              app.TradeNo,
+				Amount:               app.Amount,
+				Money:                app.Money,
+				CreatedAt:            app.CreatedAt,
+			},
+		}
+	}
+	return nil
+}
+
 func markInvoicePdfReadyList(apps []*InvoiceApplication) {
 	for _, app := range apps {
 		markInvoicePdfReady(app)
@@ -116,38 +293,92 @@ func markInvoicePdfReadyList(apps []*InvoiceApplication) {
 
 func SubmitInvoiceApplication(userId int, input InvoiceApplicationSubmit) (*InvoiceApplication, error) {
 	input = normalizeInvoiceApplicationInput(input)
-	if input.TradeNo == "" {
+	tradeNos := invoiceApplicationTradeNos(input)
+	if len(tradeNos) == 0 {
 		return nil, errors.New("订单号不能为空")
 	}
+	input.TradeNo = tradeNos[0]
 	if err := ValidateInvoiceApplicationInput(input); err != nil {
 		return nil, err
 	}
 
 	app := &InvoiceApplication{}
 	err := DB.Transaction(func(tx *gorm.DB) error {
-		var topUp TopUp
-		if err := tx.Where("trade_no = ? AND user_id = ?", input.TradeNo, userId).First(&topUp).Error; err != nil {
-			return errors.New("充值订单不存在")
-		}
-		if topUp.Status != common.TopUpStatusSuccess {
-			return errors.New("只有支付成功的充值订单可以申请开票")
-		}
-
-		var count int64
-		if err := tx.Model(&InvoiceApplication{}).Where("trade_no = ?", input.TradeNo).Count(&count).Error; err != nil {
+		var topUps []TopUp
+		if err := tx.Where("trade_no IN ? AND user_id = ?", tradeNos, userId).Find(&topUps).Error; err != nil {
 			return err
 		}
-		if count > 0 {
-			return errors.New("该订单已提交过开票申请")
+		if len(topUps) != len(tradeNos) {
+			return errors.New("充值订单不存在")
+		}
+		for _, topUp := range topUps {
+			if topUp.Status != common.TopUpStatusSuccess {
+				return errors.New("只有支付成功的充值订单可以申请开票")
+			}
+		}
+
+		var existingOrders []InvoiceApplicationOrder
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("trade_no IN ?", tradeNos).Find(&existingOrders).Error; err != nil {
+			return err
+		}
+		if len(existingOrders) > 0 {
+			appId := existingOrders[0].InvoiceApplicationId
+			for _, order := range existingOrders {
+				if order.InvoiceApplicationId != appId {
+					return errors.New("该订单已提交过开票申请")
+				}
+			}
+			if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("id = ?", appId).First(app).Error; err != nil {
+				return err
+			}
+			if app.UserId != userId {
+				return errors.New("该订单已提交过开票申请")
+			}
+			if app.Status != InvoiceStatusRejected {
+				return errors.New("该订单已提交过开票申请")
+			}
+			var allExistingOrders []InvoiceApplicationOrder
+			if err := tx.Where("invoice_application_id = ?", app.Id).Find(&allExistingOrders).Error; err != nil {
+				return err
+			}
+			if !sameTradeNoSet(allExistingOrders, tradeNos) {
+				return errors.New("该订单已提交过开票申请")
+			}
+
+			now := common.GetTimestamp()
+			updateInvoiceApplicationForSubmit(app, input, topUps, tradeNos, now)
+			app.Orders = make([]*InvoiceApplicationOrder, 0, len(allExistingOrders))
+			for _, order := range allExistingOrders {
+				orderCopy := order
+				app.Orders = append(app.Orders, &orderCopy)
+			}
+			return tx.Save(app).Error
+		}
+
+		var legacyApps []InvoiceApplication
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("trade_no IN ?", tradeNos).Find(&legacyApps).Error; err != nil {
+			return err
+		}
+		if len(legacyApps) > 0 {
+			if len(legacyApps) != 1 || len(tradeNos) != 1 {
+				return errors.New("该订单已提交过开票申请")
+			}
+			*app = legacyApps[0]
+			if app.UserId != userId || app.Status != InvoiceStatusRejected {
+				return errors.New("该订单已提交过开票申请")
+			}
+
+			now := common.GetTimestamp()
+			updateInvoiceApplicationForSubmit(app, input, topUps, tradeNos, now)
+			if err := tx.Save(app).Error; err != nil {
+				return err
+			}
+			return createInvoiceApplicationOrders(tx, app, topUps, tradeNos, now)
 		}
 
 		now := common.GetTimestamp()
 		*app = InvoiceApplication{
 			UserId:       userId,
-			TopUpId:      topUp.Id,
-			TradeNo:      topUp.TradeNo,
-			Amount:       topUp.Amount,
-			Money:        topUp.Money,
 			Title:        input.Title,
 			TaxId:        input.TaxId,
 			BuyerAddress: input.BuyerAddress,
@@ -158,7 +389,11 @@ func SubmitInvoiceApplication(userId int, input InvoiceApplicationSubmit) (*Invo
 			CreatedAt:    now,
 			UpdatedAt:    now,
 		}
-		return tx.Create(app).Error
+		updateInvoiceApplicationForSubmit(app, input, topUps, tradeNos, now)
+		if err := tx.Create(app).Error; err != nil {
+			return err
+		}
+		return createInvoiceApplicationOrders(tx, app, topUps, tradeNos, now)
 	})
 	if err != nil {
 		return nil, err
@@ -195,12 +430,38 @@ func GetUserInvoiceTopUpRecords(userId int, pageInfo *common.PageInfo, keyword s
 
 	invoiceByTradeNo := map[string]InvoiceApplication{}
 	if len(tradeNos) > 0 {
+		var orders []InvoiceApplicationOrder
+		if err = DB.Where("trade_no IN ?", tradeNos).Find(&orders).Error; err != nil {
+			return nil, 0, err
+		}
+		appIds := make([]int, 0, len(orders))
+		for _, order := range orders {
+			appIds = append(appIds, order.InvoiceApplicationId)
+		}
+		if len(appIds) > 0 {
+			var apps []InvoiceApplication
+			if err = DB.Where("id IN ?", appIds).Find(&apps).Error; err != nil {
+				return nil, 0, err
+			}
+			appById := make(map[int]InvoiceApplication, len(apps))
+			for _, app := range apps {
+				appById[app.Id] = app
+			}
+			for _, order := range orders {
+				if app, ok := appById[order.InvoiceApplicationId]; ok {
+					invoiceByTradeNo[order.TradeNo] = app
+				}
+			}
+		}
+
 		var apps []InvoiceApplication
 		if err = DB.Where("trade_no IN ?", tradeNos).Find(&apps).Error; err != nil {
 			return nil, 0, err
 		}
 		for _, app := range apps {
-			invoiceByTradeNo[app.TradeNo] = app
+			if _, ok := invoiceByTradeNo[app.TradeNo]; !ok {
+				invoiceByTradeNo[app.TradeNo] = app
+			}
 		}
 	}
 
@@ -226,6 +487,9 @@ func GetUserInvoiceApplications(userId int, pageInfo *common.PageInfo) (apps []*
 		return nil, 0, err
 	}
 	markInvoicePdfReadyList(apps)
+	if err = attachInvoiceOrders(apps); err != nil {
+		return nil, 0, err
+	}
 	return apps, total, nil
 }
 
@@ -273,6 +537,18 @@ func applyInvoiceApplicationQueryOptions(query *gorm.DB, options InvoiceApplicat
 	if len(userIds) > 0 {
 		conditions = append(conditions, "user_id IN ?")
 		args = append(args, userIds)
+	}
+	var appIds []int
+	if err := DB.Model(&InvoiceApplicationOrder{}).
+		Where("trade_no LIKE ? ESCAPE '!'", pattern).
+		Limit(searchTopUpCountHardLimit).
+		Pluck("invoice_application_id", &appIds).Error; err != nil {
+		common.SysError("failed to search invoice application orders: " + err.Error())
+		return nil, errors.New("搜索开票申请失败")
+	}
+	if len(appIds) > 0 {
+		conditions = append(conditions, "id IN ?")
+		args = append(args, appIds)
 	}
 
 	return query.Where("("+strings.Join(conditions, " OR ")+")", args...), nil
@@ -336,6 +612,9 @@ func GetAllInvoiceApplications(pageInfo *common.PageInfo, options InvoiceApplica
 		return nil, 0, err
 	}
 	markInvoicePdfReadyList(apps)
+	if err = attachInvoiceOrders(apps); err != nil {
+		return nil, 0, err
+	}
 	if err = attachInvoiceUsers(apps); err != nil {
 		return nil, 0, err
 	}
@@ -354,6 +633,9 @@ func GetInvoiceApplicationById(id int) (*InvoiceApplication, error) {
 		return nil, err
 	}
 	markInvoicePdfReady(app)
+	if err := attachInvoiceOrders([]*InvoiceApplication{app}); err != nil {
+		return nil, err
+	}
 	return app, nil
 }
 
@@ -369,6 +651,9 @@ func GetUserInvoiceApplicationById(userId int, id int) (*InvoiceApplication, err
 		return nil, err
 	}
 	markInvoicePdfReady(app)
+	if err := attachInvoiceOrders([]*InvoiceApplication{app}); err != nil {
+		return nil, err
+	}
 	return app, nil
 }
 
@@ -402,6 +687,9 @@ func ApproveInvoiceApplication(id int, adminId int, pdfFileName string, pdfPath 
 		return nil, err
 	}
 	markInvoicePdfReady(app)
+	if err := attachInvoiceOrders([]*InvoiceApplication{app}); err != nil {
+		return nil, err
+	}
 	return app, nil
 }
 
@@ -435,5 +723,8 @@ func RejectInvoiceApplication(id int, adminId int, reason string) (*InvoiceAppli
 		return nil, err
 	}
 	markInvoicePdfReady(app)
+	if err := attachInvoiceOrders([]*InvoiceApplication{app}); err != nil {
+		return nil, err
+	}
 	return app, nil
 }
