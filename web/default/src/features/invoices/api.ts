@@ -24,6 +24,7 @@ import type {
   InvoiceApplicationPayload,
   InvoiceListQuery,
   InvoicePageResponse,
+  InvoicePendingCount,
   InvoiceTopUpRecord,
 } from './types'
 
@@ -96,6 +97,17 @@ export async function getAdminInvoiceApplications(
   const queryParams = buildInvoiceQueryParams(params)
   const res = await api.get(`/api/user/invoices/admin?${queryParams}`, {
     skipBusinessError: true,
+    disableDuplicate: true,
+  })
+  return res.data
+}
+
+export async function getAdminInvoicePendingCount(): Promise<
+  InvoiceApiResponse<InvoicePendingCount>
+> {
+  const res = await api.get('/api/user/invoices/admin/pending-count', {
+    skipBusinessError: true,
+    skipErrorHandler: true,
     disableDuplicate: true,
   })
   return res.data

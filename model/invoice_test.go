@@ -356,6 +356,40 @@ func TestInvoiceApplicationReviewTransitions(t *testing.T) {
 	assert.Contains(t, err.Error(), "只能处理待审核")
 }
 
+func TestGetPendingInvoiceApplicationCount(t *testing.T) {
+	truncateTables(t)
+
+	user := createInvoiceTestUser(t, "pending_count")
+	admin := createInvoiceTestUser(t, "pending_count_admin")
+	firstTopUp := createInvoiceTestTopUp(t, user.Id, "invoice_pending_count_first", common.TopUpStatusSuccess)
+	secondTopUp := createInvoiceTestTopUp(t, user.Id, "invoice_pending_count_second", common.TopUpStatusSuccess)
+
+	count, err := GetPendingInvoiceApplicationCount()
+	require.NoError(t, err)
+	assert.EqualValues(t, 0, count)
+
+	firstApp, err := SubmitInvoiceApplication(user.Id, validInvoiceSubmit(firstTopUp.TradeNo))
+	require.NoError(t, err)
+	secondApp, err := SubmitInvoiceApplication(user.Id, validInvoiceSubmit(secondTopUp.TradeNo))
+	require.NoError(t, err)
+
+	count, err = GetPendingInvoiceApplicationCount()
+	require.NoError(t, err)
+	assert.EqualValues(t, 2, count)
+
+	_, err = ApproveInvoiceApplication(firstApp.Id, admin.Id, "invoice.pdf", "stored-first.pdf")
+	require.NoError(t, err)
+	count, err = GetPendingInvoiceApplicationCount()
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, count)
+
+	_, err = RejectInvoiceApplication(secondApp.Id, admin.Id, "invalid title")
+	require.NoError(t, err)
+	count, err = GetPendingInvoiceApplicationCount()
+	require.NoError(t, err)
+	assert.EqualValues(t, 0, count)
+}
+
 func TestGetUserInvoiceApplicationByIdRequiresOwner(t *testing.T) {
 	truncateTables(t)
 

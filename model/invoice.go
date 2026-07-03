@@ -603,6 +603,14 @@ func GetAllInvoiceApplications(pageInfo *common.PageInfo, options InvoiceApplica
 	return apps, total, nil
 }
 
+func GetPendingInvoiceApplicationCount() (int64, error) {
+	var count int64
+	err := DB.Model(&InvoiceApplication{}).
+		Where("status = ?", InvoiceStatusPending).
+		Count(&count).Error
+	return count, err
+}
+
 func GetInvoiceApplicationById(id int) (*InvoiceApplication, error) {
 	if id <= 0 {
 		return nil, errors.New("开票申请不存在")

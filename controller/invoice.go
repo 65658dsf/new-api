@@ -26,6 +26,10 @@ type rejectInvoiceApplicationRequest struct {
 	Reason string `json:"reason"`
 }
 
+type invoicePendingCountResponse struct {
+	PendingCount int64 `json:"pending_count"`
+}
+
 func GetUserInvoiceTopUpRecords(c *gin.Context) {
 	userId := c.GetInt("id")
 	pageInfo := common.GetPageQuery(c)
@@ -52,6 +56,7 @@ func SubmitInvoiceApplication(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	go notifyInvoiceApplicationAdmins(app)
 	common.ApiSuccess(c, app)
 }
 
@@ -138,6 +143,15 @@ func GetAllInvoiceApplications(c *gin.Context) {
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(apps)
 	common.ApiSuccess(c, pageInfo)
+}
+
+func GetAdminInvoicePendingCount(c *gin.Context) {
+	count, err := model.GetPendingInvoiceApplicationCount()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, invoicePendingCountResponse{PendingCount: count})
 }
 
 func AdminApproveInvoiceApplication(c *gin.Context) {
@@ -331,5 +345,70 @@ func notifyInvoiceApplicationUser(app *model.InvoiceApplication, approved bool) 
 	notification := dto.NewNotify(dto.NotifyTypeInvoice, title, content, nil)
 	if err := service.NotifyUser(user.Id, user.Email, user.GetSetting(), notification); err != nil {
 		common.SysLog(fmt.Sprintf("failed to notify user %d for invoice application %d: %s", user.Id, app.Id, err.Error()))
+	}
+}
+
+func notifyInvoiceApplicationAdmins(app *model.InvoiceApplication) {
+	if app == nil {
+		return
+	}
+
+	var admins []model.User
+	if err := model.DB.
+		Select("id", "email", "setting").
+		Where("status = ? AND role >= ?", common.UserStatusEnabled, common.RoleAdminUser).
+		Find(&admins).Error; err != nil {
+		common.SysLog(fmt.Sprintf("failed to query invoice notification admins: %s", err.Error()))
+		return
+	}
+
+	orderItems := make([]string, 0, len(app.Orders))
+	for _, order := range app.Orders {
+		if order == nil || strings.TrimSpace(order.TradeNo) == "" {
+			continue
+		}
+		orderItems = append(orderItems, fmt.Sprintf(
+			"<li>%s：%.2f</li>",
+			html.EscapeString(order.TradeNo),
+			order.Money,
+		))
+	}
+	if len(orderItems) == 0 && strings.TrimSpace(app.TradeNo) != "" {
+		orderItems = append(orderItems, fmt.Sprintf(
+			"<li>%s：%.2f</li>",
+			html.EscapeString(app.TradeNo),
+			app.Money,
+		))
+	}
+
+	subject := "新的开票申请待处理"
+	content := fmt.Sprintf(
+		"<p>有新的开票申请待处理，请前往管理员后台的开票申请管理页面处理。</p>"+
+			"<p>申请编号：%d</p>"+
+			"<p>申请用户 ID：%d</p>"+
+			"<p>发票抬头：%s</p>"+
+			"<p>统一社会信用代码/纳税人识别号：%s</p>"+
+			"<p>订单明细：</p><ul>%s</ul>"+
+			"<p>总金额：%.2f</p>",
+		app.Id,
+		app.UserId,
+		html.EscapeString(app.Title),
+		html.EscapeString(app.TaxId),
+		strings.Join(orderItems, ""),
+		app.Money,
+	)
+
+	for _, admin := range admins {
+		email := strings.TrimSpace(admin.GetSetting().NotificationEmail)
+		if email == "" {
+			email = strings.TrimSpace(admin.Email)
+		}
+		if email == "" {
+			common.SysLog(fmt.Sprintf("admin user %d has no email, skip invoice notification", admin.Id))
+			continue
+		}
+		if err := common.SendEmail(subject, email, content); err != nil {
+			common.SysLog(fmt.Sprintf("failed to notify admin %d for invoice application %d: %s", admin.Id, app.Id, err.Error()))
+		}
 	}
 }

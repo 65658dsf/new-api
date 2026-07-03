@@ -35,9 +35,12 @@ import {
   Users,
   Wallet,
 } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { ROLE } from '@/lib/roles'
 import { type SidebarData } from '@/components/layout/types'
+import { useAuthStore } from '@/stores/auth-store'
+import { getAdminInvoicePendingCount } from '@/features/invoices/api'
 
 /**
  * Root navigation groups for the application sidebar.
@@ -47,6 +50,22 @@ import { type SidebarData } from '@/components/layout/types'
  */
 export function useSidebarData(): SidebarData {
   const { t } = useTranslation()
+  const userRole = useAuthStore((state) => state.auth.user?.role ?? ROLE.GUEST)
+  const isAdmin = userRole >= ROLE.ADMIN
+  const pendingInvoiceCountQuery = useQuery({
+    queryKey: ['dashboard', 'invoice-applications', 'pending-count'],
+    queryFn: async () => {
+      const result = await getAdminInvoicePendingCount()
+      return result.success ? (result.data?.pending_count ?? 0) : 0
+    },
+    enabled: isAdmin,
+    refetchInterval: 60_000,
+    retry: false,
+  })
+  const pendingInvoiceBadge =
+    (pendingInvoiceCountQuery.data ?? 0) > 0
+      ? String(pendingInvoiceCountQuery.data)
+      : undefined
 
   return {
     navGroups: [
@@ -147,6 +166,8 @@ export function useSidebarData(): SidebarData {
           {
             title: t('Order Management'),
             icon: CreditCard,
+            badge: pendingInvoiceBadge,
+            badgeVariant: 'destructive',
             activeUrls: [
               '/dashboard/payment-overview',
               '/dashboard/payment-orders',
@@ -174,6 +195,8 @@ export function useSidebarData(): SidebarData {
                 title: t('Invoice Applications'),
                 url: '/dashboard/invoice-applications',
                 icon: ReceiptText,
+                badge: pendingInvoiceBadge,
+                badgeVariant: 'destructive',
               },
               {
                 title: t('Subscriptions'),

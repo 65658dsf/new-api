@@ -179,9 +179,14 @@ export function InvoiceApplications() {
       setApprovingApplication(null)
       setSelectedPdf(null)
       setFileError('')
-      await queryClient.invalidateQueries({
-        queryKey: ['dashboard', 'invoice-applications'],
-      })
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ['dashboard', 'invoice-applications'],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ['dashboard', 'invoice-applications', 'pending-count'],
+        }),
+      ])
     },
     onError: () => {
       toast.error(t('Approval failed'))
@@ -199,9 +204,14 @@ export function InvoiceApplications() {
       toast.success(t('Invoice application rejected successfully'))
       setRejectingApplication(null)
       setRejectReason('')
-      await queryClient.invalidateQueries({
-        queryKey: ['dashboard', 'invoice-applications'],
-      })
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ['dashboard', 'invoice-applications'],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ['dashboard', 'invoice-applications', 'pending-count'],
+        }),
+      ])
     },
     onError: () => {
       toast.error(t('Rejection failed'))
@@ -217,9 +227,14 @@ export function InvoiceApplications() {
       }
       toast.success(t('Invoice application deleted successfully'))
       setDeletingApplication(null)
-      await queryClient.invalidateQueries({
-        queryKey: ['dashboard', 'invoice-applications'],
-      })
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ['dashboard', 'invoice-applications'],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ['dashboard', 'invoice-applications', 'pending-count'],
+        }),
+      ])
     },
     onError: () => {
       toast.error(t('Delete failed'))

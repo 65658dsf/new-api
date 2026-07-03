@@ -98,6 +98,10 @@ export interface InvoiceListQuery {
   status?: InvoiceStatus
 }
 
+export interface InvoicePendingCount {
+  pending_count: number
+}
+
 export interface InvoicePageResponse<T> {
   items: T[]
   total: number
