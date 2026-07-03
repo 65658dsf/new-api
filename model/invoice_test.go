@@ -198,6 +198,32 @@ func TestCancelUserInvoiceApplicationRejectsApprovedApplication(t *testing.T) {
 	assert.Contains(t, err.Error(), "不能撤销")
 }
 
+func TestDeleteInvoiceApplicationByAdminRemovesApprovedApplication(t *testing.T) {
+	truncateTables(t)
+
+	user := createInvoiceTestUser(t, "admin_delete")
+	admin := createInvoiceTestUser(t, "admin_delete_admin")
+	topUp := createInvoiceTestTopUp(t, user.Id, "invoice_admin_delete", common.TopUpStatusSuccess)
+
+	app, err := SubmitInvoiceApplication(user.Id, validInvoiceSubmit(topUp.TradeNo))
+	require.NoError(t, err)
+	app, err = ApproveInvoiceApplication(app.Id, admin.Id, "invoice.pdf", "stored.pdf")
+	require.NoError(t, err)
+
+	deleted, err := DeleteInvoiceApplicationByAdmin(app.Id)
+	require.NoError(t, err)
+	assert.Equal(t, "stored.pdf", deleted.PdfPath)
+
+	records, _, err := GetUserInvoiceTopUpRecords(user.Id, &common.PageInfo{Page: 1, PageSize: 10}, "")
+	require.NoError(t, err)
+	require.Len(t, records, 1)
+	assert.False(t, records[0].InvoiceApplied)
+
+	_, err = GetInvoiceApplicationById(app.Id)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "开票申请不存在")
+}
+
 func TestSubmitInvoiceApplicationRequiresOwnedSuccessfulTopUp(t *testing.T) {
 	truncateTables(t)
 

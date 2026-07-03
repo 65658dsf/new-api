@@ -139,6 +139,7 @@ func SetApiRouter(router *gin.Engine) {
 				adminRoute.GET("/invoices/admin", controller.GetAllInvoiceApplications)
 				adminRoute.POST("/invoices/:id/approve", controller.AdminApproveInvoiceApplication)
 				adminRoute.POST("/invoices/:id/reject", controller.AdminRejectInvoiceApplication)
+				adminRoute.DELETE("/invoices/:id/admin", controller.AdminDeleteInvoiceApplication)
 				adminRoute.GET("/search", controller.SearchUsers)
 				adminRoute.GET("/:id/oauth/bindings", controller.GetUserOAuthBindingsByAdmin)
 				adminRoute.DELETE("/:id/oauth/bindings/:provider_id", controller.UnbindCustomOAuthByAdmin)

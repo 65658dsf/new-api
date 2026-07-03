@@ -20,7 +20,14 @@ For commercial licensing, please contact support@quantumnous.com
 import { useCallback, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { type ColumnDef, type PaginationState } from '@tanstack/react-table'
-import { CheckCircle2, Copy, RefreshCcw, Search, XCircle } from 'lucide-react'
+import {
+  CheckCircle2,
+  Copy,
+  RefreshCcw,
+  Search,
+  Trash2,
+  XCircle,
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { DataTablePage, useDataTable } from '@/components/data-table'
@@ -40,6 +47,7 @@ import { formatBillingCurrencyFromUSD } from '@/lib/currency'
 import { formatTimestampToDate } from '@/lib/format'
 import {
   approveInvoiceApplication,
+  deleteAdminInvoiceApplication,
   getAdminInvoiceApplications,
   rejectInvoiceApplication,
 } from '@/features/invoices/api'
@@ -126,6 +134,8 @@ export function InvoiceApplications() {
     useState<InvoiceApplication | null>(null)
   const [approvingApplication, setApprovingApplication] =
     useState<InvoiceApplication | null>(null)
+  const [deletingApplication, setDeletingApplication] =
+    useState<InvoiceApplication | null>(null)
   const [rejectReason, setRejectReason] = useState('')
   const [selectedPdf, setSelectedPdf] = useState<File | null>(null)
   const [fileError, setFileError] = useState('')
@@ -198,6 +208,24 @@ export function InvoiceApplications() {
     },
   })
 
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => deleteAdminInvoiceApplication(id),
+    onSuccess: async (result) => {
+      if (!result.success) {
+        toast.error(result.message || t('Delete failed'))
+        return
+      }
+      toast.success(t('Invoice application deleted successfully'))
+      setDeletingApplication(null)
+      await queryClient.invalidateQueries({
+        queryKey: ['dashboard', 'invoice-applications'],
+      })
+    },
+    onError: () => {
+      toast.error(t('Delete failed'))
+    },
+  })
+
   const rows = applicationsQuery.data?.items ?? []
   const total = applicationsQuery.data?.total ?? 0
 
@@ -216,6 +244,10 @@ export function InvoiceApplications() {
   const openRejectDialog = useCallback((application: InvoiceApplication) => {
     setRejectingApplication(application)
     setRejectReason('')
+  }, [])
+
+  const openDeleteDialog = useCallback((application: InvoiceApplication) => {
+    setDeletingApplication(application)
   }, [])
 
   const handlePdfChange = (file: File | null) => {
@@ -267,6 +299,15 @@ export function InvoiceApplications() {
         id: rejectingApplication.id,
         reason,
       })
+    } catch {
+      /* handled by mutation */
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!deletingApplication) return
+    try {
+      await deleteMutation.mutateAsync(deletingApplication.id)
     } catch {
       /* handled by mutation */
     }
@@ -426,36 +467,47 @@ export function InvoiceApplications() {
       {
         id: 'actions',
         header: () => t('Actions'),
-        cell: ({ row }) =>
-          row.original.status === 'pending' ? (
-            <div className='flex items-center gap-1.5'>
-              <Button
-                variant='outline'
-                size='sm'
-                onClick={() => openApproveDialog(row.original)}
-              >
-                <CheckCircle2 className='size-4' />
-                {t('Approve and Upload')}
-              </Button>
-              <Button
-                variant='destructive'
-                size='sm'
-                onClick={() => openRejectDialog(row.original)}
-              >
-                <XCircle className='size-4' />
-                {t('Reject')}
-              </Button>
-            </div>
-          ) : (
-            <span className='text-muted-foreground text-sm'>
-              {t('Processed')}
-            </span>
-          ),
-        size: 260,
+        cell: ({ row }) => (
+          <div className='flex items-center gap-1.5'>
+            {row.original.status === 'pending' ? (
+              <>
+                <Button
+                  variant='outline'
+                  size='sm'
+                  onClick={() => openApproveDialog(row.original)}
+                >
+                  <CheckCircle2 className='size-4' />
+                  {t('Approve and Upload')}
+                </Button>
+                <Button
+                  variant='destructive'
+                  size='sm'
+                  onClick={() => openRejectDialog(row.original)}
+                >
+                  <XCircle className='size-4' />
+                  {t('Reject')}
+                </Button>
+              </>
+            ) : (
+              <span className='text-muted-foreground text-sm'>
+                {t('Processed')}
+              </span>
+            )}
+            <Button
+              variant='destructive'
+              size='sm'
+              onClick={() => openDeleteDialog(row.original)}
+            >
+              <Trash2 className='size-4' />
+              {t('Delete')}
+            </Button>
+          </div>
+        ),
+        size: 340,
         meta: { pinned: 'right' as const },
       },
     ],
-    [openApproveDialog, openRejectDialog, t]
+    [openApproveDialog, openDeleteDialog, openRejectDialog, t]
   )
 
   const { table } = useDataTable({
@@ -687,6 +739,42 @@ export function InvoiceApplications() {
             placeholder={t('Enter rejection reason')}
             className='min-h-28 resize-none'
           />
+        </div>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(deletingApplication)}
+        onOpenChange={(open) => !open && setDeletingApplication(null)}
+        title={t('Delete Invoice Application')}
+        description={t(
+          'This will permanently delete the invoice application and its uploaded PDF if one exists.'
+        )}
+        footer={
+          <>
+            <Button
+              type='button'
+              variant='outline'
+              onClick={() => setDeletingApplication(null)}
+              disabled={deleteMutation.isPending}
+            >
+              {t('Cancel')}
+            </Button>
+            <Button
+              type='button'
+              variant='destructive'
+              onClick={() => void handleDelete()}
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending ? t('Processing...') : t('Delete')}
+            </Button>
+          </>
+        }
+      >
+        <div className='space-y-2 text-sm'>
+          <div className='font-medium'>{deletingApplication?.title}</div>
+          <div className='text-muted-foreground'>
+            {t('This action cannot be undone.')}
+          </div>
         </div>
       </Dialog>
     </>

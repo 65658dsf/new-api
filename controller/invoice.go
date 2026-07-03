@@ -196,6 +196,27 @@ func AdminRejectInvoiceApplication(c *gin.Context) {
 	common.ApiSuccess(c, app)
 }
 
+func AdminDeleteInvoiceApplication(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		common.ApiErrorMsg(c, "参数错误")
+		return
+	}
+
+	app, err := model.DeleteInvoiceApplicationByAdmin(id)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if app.PdfPath != "" {
+		if err := deleteInvoicePDF(app.PdfPath); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+	}
+	common.ApiSuccess(c, nil)
+}
+
 func invoicePDFDir() string {
 	configured := strings.TrimSpace(os.Getenv("INVOICE_FILE_DIR"))
 	if configured != "" {
@@ -210,6 +231,17 @@ func invoicePDFAbsolutePath(storedName string) (string, error) {
 		return "", errors.New("发票 PDF 文件路径无效")
 	}
 	return filepath.Join(invoicePDFDir(), storedName), nil
+}
+
+func deleteInvoicePDF(storedName string) error {
+	absPath, err := invoicePDFAbsolutePath(storedName)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(absPath); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }
 
 func saveUploadedInvoicePDF(applicationId int, header *multipart.FileHeader, file multipart.File) (string, error) {

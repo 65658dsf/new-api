@@ -124,3 +124,12 @@ export async function rejectInvoiceApplication(
   )
   return res.data
 }
+
+export async function deleteAdminInvoiceApplication(
+  id: number
+): Promise<InvoiceApiResponse> {
+  const res = await api.delete(`/api/user/invoices/${id}/admin`, {
+    skipBusinessError: true,
+  })
+  return res.data
+}

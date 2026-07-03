@@ -93,3 +93,17 @@ func TestSaveUploadedInvoicePDFRejectsInvalidInputs(t *testing.T) {
 		})
 	}
 }
+
+func TestDeleteInvoicePDFRemovesStoredFile(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("INVOICE_FILE_DIR", dir)
+
+	fileName := "invoice-delete-test.pdf"
+	filePath := filepath.Join(dir, fileName)
+	require.NoError(t, os.WriteFile(filePath, []byte("%PDF-1.7\nbody"), 0600))
+
+	require.NoError(t, deleteInvoicePDF(fileName))
+	_, err := os.Stat(filePath)
+	require.True(t, os.IsNotExist(err))
+	require.NoError(t, deleteInvoicePDF(fileName))
+}

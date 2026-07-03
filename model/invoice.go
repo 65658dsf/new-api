@@ -662,6 +662,30 @@ func CancelUserInvoiceApplication(userId int, id int) error {
 	})
 }
 
+func DeleteInvoiceApplicationByAdmin(id int) (*InvoiceApplication, error) {
+	if id <= 0 {
+		return nil, errors.New("开票申请不存在")
+	}
+
+	app := &InvoiceApplication{}
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("id = ?", id).First(app).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errors.New("开票申请不存在")
+			}
+			return err
+		}
+		if err := tx.Where("invoice_application_id = ?", app.Id).Delete(&InvoiceApplicationOrder{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(app).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	return app, nil
+}
+
 func ApproveInvoiceApplication(id int, adminId int, pdfFileName string, pdfPath string) (*InvoiceApplication, error) {
 	if pdfPath == "" {
 		return nil, errors.New("请上传发票 PDF 文件")
