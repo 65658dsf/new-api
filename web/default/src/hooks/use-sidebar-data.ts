@@ -27,6 +27,7 @@ import {
   ListTodo,
   MessageSquare,
   Radio,
+  ReceiptText,
   ServerCog,
   Settings,
   Ticket,
@@ -112,6 +113,11 @@ export function useSidebarData(): SidebarData {
             url: '/profile',
             icon: User,
           },
+          {
+            title: t('Self-service Invoicing'),
+            url: '/invoices',
+            icon: ReceiptText,
+          },
         ],
       },
       {
@@ -141,10 +147,16 @@ export function useSidebarData(): SidebarData {
           {
             title: t('Order Management'),
             icon: CreditCard,
-            activeUrls: ['/dashboard/payment-overview', '/dashboard/payment-orders', '/subscriptions'],
+            activeUrls: [
+              '/dashboard/payment-overview',
+              '/dashboard/payment-orders',
+              '/dashboard/invoice-applications',
+              '/subscriptions',
+            ],
             configUrls: [
               '/dashboard/payment-overview',
               '/dashboard/payment-orders',
+              '/dashboard/invoice-applications',
               '/subscriptions',
             ],
             items: [
@@ -157,6 +169,11 @@ export function useSidebarData(): SidebarData {
                 title: t('Payment Orders'),
                 url: '/dashboard/payment-orders',
                 icon: FileText,
+              },
+              {
+                title: t('Invoice Applications'),
+                url: '/dashboard/invoice-applications',
+                icon: ReceiptText,
               },
               {
                 title: t('Subscriptions'),

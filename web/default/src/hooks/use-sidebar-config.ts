@@ -52,6 +52,7 @@ const DEFAULT_SIDEBAR_MODULES: SidebarModulesAdminConfig = {
   personal: {
     enabled: true,
     topup: true,
+    invoice: true,
     personal: true,
   },
   admin: {
@@ -64,6 +65,7 @@ const DEFAULT_SIDEBAR_MODULES: SidebarModulesAdminConfig = {
     order: true,
     payment_overview: true,
     payment_orders: true,
+    invoice_applications: true,
     subscription: true,
   },
 }
@@ -107,12 +109,17 @@ const URL_TO_CONFIG_MAP: Record<string, { section: string; module: string }> = {
     module: 'payment_overview',
   },
   '/dashboard/payment-orders': { section: 'admin', module: 'payment_orders' },
+  '/dashboard/invoice-applications': {
+    section: 'admin',
+    module: 'invoice_applications',
+  },
   '/keys': { section: 'console', module: 'token' },
   '/usage-logs': { section: 'console', module: 'log' },
   '/usage-logs/common': { section: 'console', module: 'log' },
   '/usage-logs/drawing': { section: 'console', module: 'midjourney' },
   '/usage-logs/task': { section: 'console', module: 'task' },
   '/wallet': { section: 'personal', module: 'topup' },
+  '/invoices': { section: 'personal', module: 'invoice' },
   '/profile': { section: 'personal', module: 'personal' },
   '/channels': { section: 'admin', module: 'channel' },
   '/models': { section: 'admin', module: 'models' },

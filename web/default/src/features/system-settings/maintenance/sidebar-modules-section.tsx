@@ -120,6 +120,10 @@ export function SidebarModulesSection({
         title: t('Wallet'),
         description: t('Top up balance and view billing history.'),
       },
+      invoice: {
+        title: t('Self-service Invoicing'),
+        description: t('Apply for invoices and download approved PDFs.'),
+      },
       personal: {
         title: t('Profile'),
         description: t('Personal settings and profile management.'),
@@ -141,6 +145,22 @@ export function SidebarModulesSection({
       user: {
         title: t('Users'),
         description: t('Administer user accounts and roles.'),
+      },
+      order: {
+        title: t('Order Management'),
+        description: t('Payment orders, invoices, and subscriptions.'),
+      },
+      payment_overview: {
+        title: t('Payment Overview'),
+        description: t('Review payment income and order trends.'),
+      },
+      payment_orders: {
+        title: t('Payment Orders'),
+        description: t('Search and process recharge orders.'),
+      },
+      invoice_applications: {
+        title: t('Invoice Applications'),
+        description: t('Review invoice requests and upload issued PDFs.'),
       },
       setting: {
         title: t('System settings'),

@@ -105,6 +105,12 @@ const LazyPaymentOrders = lazy(() =>
   }))
 )
 
+const LazyInvoiceApplications = lazy(() =>
+  import('./components/payments/invoice-applications').then((m) => ({
+    default: m.InvoiceApplications,
+  }))
+)
+
 function LogStatCardsFallback() {
   return (
     <div className='overflow-hidden rounded-lg border'>
@@ -176,6 +182,9 @@ const SECTION_META: Record<DashboardSectionId, { titleKey: string }> = {
   },
   'payment-orders': {
     titleKey: 'Payment Orders',
+  },
+  'invoice-applications': {
+    titleKey: 'Invoice Applications',
   },
 }
 
@@ -413,6 +422,13 @@ export function Dashboard() {
             <FadeIn>
               <Suspense fallback={<ModelChartsFallback />}>
                 <LazyPaymentOrders />
+              </Suspense>
+            </FadeIn>
+          )}
+          {activeSection === 'invoice-applications' && (
+            <FadeIn>
+              <Suspense fallback={<ModelChartsFallback />}>
+                <LazyInvoiceApplications />
               </Suspense>
             </FadeIn>
           )}

@@ -70,6 +70,7 @@ export const SIDEBAR_MODULES_DEFAULT: SidebarModulesAdminConfig = {
   personal: {
     enabled: true,
     topup: true,
+    invoice: true,
     personal: true,
   },
   admin: {
@@ -79,6 +80,10 @@ export const SIDEBAR_MODULES_DEFAULT: SidebarModulesAdminConfig = {
     redemption: true,
     user: true,
     setting: true,
+    order: true,
+    payment_overview: true,
+    payment_orders: true,
+    invoice_applications: true,
     subscription: true,
   },
 }
