@@ -83,6 +83,23 @@ func ClaudeErrorWrapperLocal(err error, code string, statusCode int) *dto.Claude
 	return claudeErr
 }
 
+func claudeThirdPartyExtraUsageError(statusCode int, message string) *types.NewAPIError {
+	if statusCode != http.StatusBadRequest {
+		return nil
+	}
+	if !isClaudeThirdPartyExtraUsageMessage(message) {
+		return nil
+	}
+	return types.NewOpenAIError(errors.New(strings.TrimSpace(message)), types.ErrorCodeChannelNoAvailableKey, http.StatusTooManyRequests)
+}
+
+func isClaudeThirdPartyExtraUsageMessage(message string) bool {
+	lowerMessage := strings.ToLower(message)
+	return strings.Contains(lowerMessage, "third-party apps") &&
+		strings.Contains(lowerMessage, "extra usage") &&
+		strings.Contains(lowerMessage, "settings/usage")
+}
+
 func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFail bool) (newApiErr *types.NewAPIError) {
 	newApiErr = types.InitOpenAIError(types.ErrorCodeBadResponseStatusCode, resp.StatusCode)
 
@@ -103,6 +120,9 @@ func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFai
 
 	err = common.Unmarshal(responseBody, &errResponse)
 	if err != nil {
+		if extraUsageErr := claudeThirdPartyExtraUsageError(resp.StatusCode, responseBodyText); extraUsageErr != nil {
+			return extraUsageErr
+		}
 		if showBodyWhenFail {
 			newApiErr.Err = buildErrWithBody("")
 		} else {
@@ -117,13 +137,20 @@ func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFai
 		oaiError := errResponse.TryToOpenAIError()
 		if oaiError != nil {
 			newApiErr = types.WithOpenAIError(*oaiError, resp.StatusCode)
+			if extraUsageErr := claudeThirdPartyExtraUsageError(resp.StatusCode, newApiErr.Error()); extraUsageErr != nil {
+				return extraUsageErr
+			}
 			if showBodyWhenFail {
 				newApiErr.Err = buildErrWithBody(newApiErr.Error())
 			}
 			return
 		}
 	}
-	newApiErr = types.NewOpenAIError(errors.New(errResponse.ToMessage()), types.ErrorCodeBadResponseStatusCode, resp.StatusCode)
+	message := errResponse.ToMessage()
+	if extraUsageErr := claudeThirdPartyExtraUsageError(resp.StatusCode, message); extraUsageErr != nil {
+		return extraUsageErr
+	}
+	newApiErr = types.NewOpenAIError(errors.New(message), types.ErrorCodeBadResponseStatusCode, resp.StatusCode)
 	if showBodyWhenFail {
 		newApiErr.Err = buildErrWithBody(newApiErr.Error())
 	}

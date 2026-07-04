@@ -122,6 +122,41 @@ func TestRelayErrorHandlerKeepsOpenAIErrorMessage(t *testing.T) {
 	require.Equal(t, message, newAPIError.Error())
 }
 
+func TestRelayErrorHandlerTreatsClaudeExtraUsageAsChannelError(t *testing.T) {
+	message := "Third-party apps now draw from your extra usage, not your plan limits. Add more at claude.ai/settings/usage and keep going."
+	testCases := []struct {
+		name string
+		body string
+	}{
+		{
+			name: "anthropic error object",
+			body: `{"error":{"type":"invalid_request_error","message":"` + message + `"}}`,
+		},
+		{
+			name: "plain text body",
+			body: "HTTP 400: " + message,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			resp := &http.Response{
+				StatusCode: http.StatusBadRequest,
+				Body:       io.NopCloser(strings.NewReader(tc.body)),
+			}
+
+			newAPIError := RelayErrorHandler(context.Background(), resp, false)
+
+			require.NotNil(t, newAPIError)
+			require.True(t, types.IsChannelError(newAPIError))
+			require.Equal(t, types.ErrorCodeChannelNoAvailableKey, newAPIError.GetErrorCode())
+			require.Equal(t, http.StatusTooManyRequests, newAPIError.StatusCode)
+			require.Contains(t, newAPIError.Error(), "Third-party apps")
+		})
+	}
+}
+
 func TestRelayErrorHandlerKeepsInvalidJSONBodyInDebugLog(t *testing.T) {
 	withDebugEnabled(t, true)
 
