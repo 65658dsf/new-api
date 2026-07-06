@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { type ComponentProps, type ReactNode, useState, useEffect } from 'react'
 import { Link, useLocation } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
+
 import { Badge } from '@/components/ui/badge'
 import {
   Collapsible,
@@ -45,6 +46,7 @@ import {
   SidebarMenuSubItem,
   useSidebar,
 } from '@/components/ui/sidebar'
+
 import { checkIsActive } from '../lib/url-utils'
 import {
   type NavCollapsible,

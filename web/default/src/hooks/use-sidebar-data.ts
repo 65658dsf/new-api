@@ -37,10 +37,11 @@ import {
 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { ROLE } from '@/lib/roles'
+
 import { type SidebarData } from '@/components/layout/types'
-import { useAuthStore } from '@/stores/auth-store'
 import { getAdminInvoicePendingCount } from '@/features/invoices/api'
+import { ROLE } from '@/lib/roles'
+import { useAuthStore } from '@/stores/auth-store'
 
 /**
  * Root navigation groups for the application sidebar.

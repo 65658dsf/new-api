@@ -16,19 +16,21 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { memo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Bell, Megaphone, type LucideIcon } from 'lucide-react'
+import { memo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { getAnnouncementColorClass } from '@/lib/colors'
-import { formatDateTimeObject } from '@/lib/time'
-import { cn } from '@/lib/utils'
-import { getNotice } from '@/lib/api'
+
 import { Markdown } from '@/components/ui/markdown'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { useAnnouncements } from '@/features/dashboard/hooks/use-status-data'
 import { getPreviewText } from '@/features/dashboard/lib'
 import type { AnnouncementItem } from '@/features/dashboard/types'
+import { getNotice } from '@/lib/api'
+import { getAnnouncementColorClass } from '@/lib/colors'
+import { formatDateTimeObject } from '@/lib/time'
+import { cn } from '@/lib/utils'
+
 import { PanelWrapper } from '../ui/panel-wrapper'
 import { AnnouncementDetailModal } from './announcement-detail-dialog'
 
