@@ -16,13 +16,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Plus } from 'lucide-react'
+import { Ban, Plus, RotateCcw, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { StaticDataTable } from '@/components/data-table'
+import { DataTableRowActionMenu, StaticDataTable } from '@/components/data-table'
 import {
   sideDrawerContentClassName,
   sideDrawerFormClassName,
@@ -32,6 +32,11 @@ import { GroupBadge } from '@/components/group-badge'
 import { StatusBadge } from '@/components/status-badge'
 import { TableId } from '@/components/table-id'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,
+} from '@/components/ui/dropdown-menu'
 import {
   Select,
   SelectContent,
@@ -47,6 +52,7 @@ import {
   SheetTitle,
   SheetDescription,
 } from '@/components/ui/sheet'
+import { Switch } from '@/components/ui/switch'
 import { formatQuota } from '@/lib/format'
 
 import {
@@ -55,6 +61,7 @@ import {
   createUserSubscription,
   invalidateUserSubscription,
   deleteUserSubscription,
+  resetUserSubscriptionsByPlan,
 } from '../../api'
 import { formatTimestamp } from '../../lib'
 import type { PlanRecord, UserSubscriptionRecord } from '../../types'
@@ -74,7 +81,7 @@ function SubscriptionStatusBadge(props: {
   const now = Date.now() / 1000
   const isExpired = (props.sub.end_time || 0) > 0 && props.sub.end_time < now
   const isActive = props.sub.status === 'active' && !isExpired
-  if (isActive)
+  if (isActive) {
     return (
       <StatusBadge
         label={props.t('Active')}
@@ -82,7 +89,8 @@ function SubscriptionStatusBadge(props: {
         copyable={false}
       />
     )
-  if (props.sub.status === 'cancelled')
+  }
+  if (props.sub.status === 'cancelled') {
     return (
       <StatusBadge
         label={props.t('Invalidated')}
@@ -90,6 +98,7 @@ function SubscriptionStatusBadge(props: {
         copyable={false}
       />
     )
+  }
   return (
     <StatusBadge
       label={props.t('Expired')}
@@ -106,6 +115,12 @@ export function UserSubscriptionsDialog(props: Props) {
   const [plans, setPlans] = useState<PlanRecord[]>([])
   const [subs, setSubs] = useState<UserSubscriptionRecord[]>([])
   const [selectedPlanId, setSelectedPlanId] = useState<string>('')
+  const [resetting, setResetting] = useState(false)
+  const [advanceResetTime, setAdvanceResetTime] = useState(true)
+  const [resetAction, setResetAction] = useState<{
+    planId: number
+    planTitle: string
+  } | null>(null)
   const [confirmAction, setConfirmAction] = useState<{
     type: 'invalidate' | 'delete'
     subId: number
@@ -191,6 +206,31 @@ export function UserSubscriptionsDialog(props: Props) {
     }
   }
 
+  const handleResetConfirm = async () => {
+    if (!props.user?.id || !resetAction) return
+    setResetting(true)
+    try {
+      const res = await resetUserSubscriptionsByPlan(props.user.id, {
+        plan_id: resetAction.planId,
+        advance_reset_time: advanceResetTime,
+      })
+      if (res.success) {
+        toast.success(
+          t('Reset {{count}} active subscriptions', {
+            count: res.data?.reset_count || 0,
+          })
+        )
+        await loadData()
+        props.onSuccess?.()
+      }
+    } catch {
+      toast.error(t('Operation failed'))
+    } finally {
+      setResetting(false)
+      setResetAction(null)
+    }
+  }
+
   return (
     <>
       <Sheet open={props.open} onOpenChange={props.onOpenChange}>
@@ -205,17 +245,15 @@ export function UserSubscriptionsDialog(props: Props) {
           <div className={sideDrawerFormClassName()}>
             <div className='flex gap-2'>
               <Select
-                items={[
-                  ...plans.map((p) => ({
-                    value: String(p.plan.id),
-                    label: (
-                      <>
-                        {p.plan.title}($
-                        {Number(p.plan.price_amount || 0).toFixed(2)})
-                      </>
-                    ),
-                  })),
-                ]}
+                items={plans.map((p) => ({
+                  value: String(p.plan.id),
+                  label: (
+                    <>
+                      {p.plan.title}($
+                      {Number(p.plan.price_amount || 0).toFixed(2)})
+                    </>
+                  ),
+                }))}
                 value={selectedPlanId}
                 onValueChange={(v) => v !== null && setSelectedPlanId(v)}
               >
@@ -337,10 +375,25 @@ export function UserSubscriptionsDialog(props: Props) {
                     const isActive = sub.status === 'active' && !isExpired
 
                     return (
-                      <div className='flex justify-end gap-1'>
-                        <Button
-                          size='sm'
-                          variant='outline'
+                      <DataTableRowActionMenu ariaLabel={t('Actions')}>
+                        <DropdownMenuItem
+                          disabled={!isActive}
+                          onClick={() => {
+                            setAdvanceResetTime(true)
+                            setResetAction({
+                              planId: sub.plan_id,
+                              planTitle:
+                                planTitleMap.get(sub.plan_id) ||
+                                `#${sub.plan_id}`,
+                            })
+                          }}
+                        >
+                          {t('Reset quota')}
+                          <DropdownMenuShortcut>
+                            <RotateCcw size={16} />
+                          </DropdownMenuShortcut>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
                           disabled={!isActive}
                           onClick={() =>
                             setConfirmAction({
@@ -350,9 +403,12 @@ export function UserSubscriptionsDialog(props: Props) {
                           }
                         >
                           {t('Invalidate')}
-                        </Button>
-                        <Button
-                          size='sm'
+                          <DropdownMenuShortcut>
+                            <Ban size={16} />
+                          </DropdownMenuShortcut>
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
                           variant='destructive'
                           onClick={() =>
                             setConfirmAction({
@@ -362,8 +418,11 @@ export function UserSubscriptionsDialog(props: Props) {
                           }
                         >
                           {t('Delete')}
-                        </Button>
-                      </div>
+                          <DropdownMenuShortcut>
+                            <Trash2 size={16} />
+                          </DropdownMenuShortcut>
+                        </DropdownMenuItem>
+                      </DataTableRowActionMenu>
                     )
                   },
                 },
@@ -394,6 +453,29 @@ export function UserSubscriptionsDialog(props: Props) {
           handleConfirm={handleConfirmAction}
           destructive={confirmAction.type === 'delete'}
         />
+      )}
+
+      {resetAction && (
+        <ConfirmDialog
+          open
+          onOpenChange={(v) => !v && setResetAction(null)}
+          title={t('Reset subscription quota')}
+          desc={t('Reset active {{plan}} subscriptions for this user?', {
+            plan: resetAction.planTitle,
+          })}
+          confirmText={t('Reset quota')}
+          handleConfirm={handleResetConfirm}
+          isLoading={resetting}
+        >
+          <label className='flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm'>
+            <span>{t('Advance next reset time')}</span>
+            <Switch
+              checked={advanceResetTime}
+              onCheckedChange={(checked) => setAdvanceResetTime(!!checked)}
+              aria-label={t('Advance next reset time')}
+            />
+          </label>
+        </ConfirmDialog>
       )}
     </>
   )
