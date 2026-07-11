@@ -21,6 +21,7 @@ import { Bell, Megaphone, type LucideIcon } from 'lucide-react'
 import { memo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { IconBadge } from '@/components/ui/icon-badge'
 import { Markdown } from '@/components/ui/markdown'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { useAnnouncements } from '@/features/dashboard/hooks/use-status-data'
@@ -178,7 +179,9 @@ export function AnnouncementsPanel() {
     <PanelWrapper
       title={
         <span className='flex items-center gap-2'>
-          <Bell className='text-muted-foreground/60 size-4' />
+          <IconBadge tone='warning' size='sm'>
+            <Bell />
+          </IconBadge>
           {t('System notifications / announcements')}
         </span>
       }

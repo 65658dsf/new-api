@@ -41,6 +41,7 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form'
+import { IconBadge } from '@/components/ui/icon-badge'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -279,7 +280,9 @@ export function SubscriptionsMutateDrawer({
             {/* Basic Info */}
             <SideDrawerSection>
               <h3 className='flex items-center gap-2 text-sm font-medium'>
-                <Settings2 className='h-4 w-4' />
+                <IconBadge tone='info' size='xs'>
+                  <Settings2 />
+                </IconBadge>
                 {t('Basic Info')}
               </h3>
 
@@ -328,7 +331,9 @@ export function SubscriptionsMutateDrawer({
                           step='0.01'
                           min={0}
                           onChange={(e) =>
-                            field.onChange(parseFloat(e.target.value) || 0)
+                            field.onChange(
+                              Number.parseFloat(e.target.value) || 0
+                            )
                           }
                         />
                       </FormControl>
@@ -364,7 +369,9 @@ export function SubscriptionsMutateDrawer({
                                 })
                           }
                           onChange={(e) =>
-                            field.onChange(parseFloat(e.target.value) || 0)
+                            field.onChange(
+                              Number.parseFloat(e.target.value) || 0
+                            )
                           }
                         />
                       </FormControl>
@@ -524,7 +531,9 @@ export function SubscriptionsMutateDrawer({
                           type='number'
                           min={0}
                           onChange={(e) =>
-                            field.onChange(parseInt(e.target.value, 10) || 0)
+                            field.onChange(
+                              Number.parseInt(e.target.value, 10) || 0
+                            )
                           }
                         />
                       </FormControl>
@@ -548,7 +557,9 @@ export function SubscriptionsMutateDrawer({
                         {...field}
                         type='number'
                         onChange={(e) =>
-                          field.onChange(parseInt(e.target.value, 10) || 0)
+                          field.onChange(
+                            Number.parseInt(e.target.value, 10) || 0
+                          )
                         }
                       />
                     </FormControl>
@@ -617,7 +628,9 @@ export function SubscriptionsMutateDrawer({
             {/* Duration Settings */}
             <SideDrawerSection>
               <h3 className='flex items-center gap-2 text-sm font-medium'>
-                <CalendarClock className='h-4 w-4' />
+                <IconBadge tone='chart-4' size='xs'>
+                  <CalendarClock />
+                </IconBadge>
                 {t('Duration Settings')}
               </h3>
 
@@ -629,12 +642,10 @@ export function SubscriptionsMutateDrawer({
                     <FormItem>
                       <FormLabel>{t('Duration Unit')}</FormLabel>
                       <Select
-                        items={[
-                          ...durationUnitOpts.map((o) => ({
-                            value: o.value,
-                            label: o.label,
-                          })),
-                        ]}
+                        items={durationUnitOpts.map((o) => ({
+                          value: o.value,
+                          label: o.label,
+                        }))}
                         onValueChange={field.onChange}
                         value={field.value}
                       >
@@ -671,7 +682,9 @@ export function SubscriptionsMutateDrawer({
                             type='number'
                             min={1}
                             onChange={(e) =>
-                              field.onChange(parseInt(e.target.value, 10) || 0)
+                              field.onChange(
+                                Number.parseInt(e.target.value, 10) || 0
+                              )
                             }
                           />
                         </FormControl>
@@ -692,7 +705,9 @@ export function SubscriptionsMutateDrawer({
                             type='number'
                             min={1}
                             onChange={(e) =>
-                              field.onChange(parseInt(e.target.value, 10) || 0)
+                              field.onChange(
+                                Number.parseInt(e.target.value, 10) || 0
+                              )
                             }
                           />
                         </FormControl>
@@ -707,7 +722,9 @@ export function SubscriptionsMutateDrawer({
             {/* Quota Reset */}
             <SideDrawerSection>
               <h3 className='flex items-center gap-2 text-sm font-medium'>
-                <RefreshCw className='h-4 w-4' />
+                <IconBadge tone='success' size='xs'>
+                  <RefreshCw />
+                </IconBadge>
                 {t('Quota Reset')}
               </h3>
 
@@ -719,12 +736,10 @@ export function SubscriptionsMutateDrawer({
                     <FormItem>
                       <FormLabel>{t('Reset Cycle')}</FormLabel>
                       <Select
-                        items={[
-                          ...resetPeriodOpts.map((o) => ({
-                            value: o.value,
-                            label: o.label,
-                          })),
-                        ]}
+                        items={resetPeriodOpts.map((o) => ({
+                          value: o.value,
+                          label: o.label,
+                        }))}
                         onValueChange={field.onChange}
                         value={field.value}
                       >
@@ -761,7 +776,9 @@ export function SubscriptionsMutateDrawer({
                           min={0}
                           disabled={resetPeriod !== 'custom'}
                           onChange={(e) =>
-                            field.onChange(parseInt(e.target.value, 10) || 0)
+                            field.onChange(
+                              Number.parseInt(e.target.value, 10) || 0
+                            )
                           }
                         />
                       </FormControl>
@@ -775,7 +792,9 @@ export function SubscriptionsMutateDrawer({
             {/* Payment Config */}
             <SideDrawerSection>
               <h3 className='flex items-center gap-2 text-sm font-medium'>
-                <CreditCard className='h-4 w-4' />
+                <IconBadge tone='warning' size='xs'>
+                  <CreditCard />
+                </IconBadge>
                 {t('Third-party Payment Config')}
               </h3>
 
