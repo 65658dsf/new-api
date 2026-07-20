@@ -109,6 +109,64 @@ func TestGetAllTopUpRecordsFiltersAndAttachesUsers(t *testing.T) {
 	assert.Equal(t, "order-alice-success", records[0].TradeNo)
 }
 
+func TestGetAllTopUpRecordsAttachesSubscriptionPlan(t *testing.T) {
+	truncateTables(t)
+
+	now := time.Now().Unix()
+	plan := SubscriptionPlan{
+		Id:            1001,
+		Title:         "Professional Monthly",
+		PriceAmount:   30,
+		Currency:      "USD",
+		DurationUnit:  SubscriptionDurationMonth,
+		DurationValue: 1,
+	}
+	require.NoError(t, DB.Create(&plan).Error)
+
+	seedTopUpAdminOrder(t, TopUp{
+		Id:            1101,
+		UserId:        701,
+		Money:         30,
+		TradeNo:       "subscription-order",
+		PaymentMethod: "alipay",
+		CreateTime:    now,
+		CompleteTime:  now,
+		Status:        common.TopUpStatusSuccess,
+	})
+	seedTopUpAdminOrder(t, TopUp{
+		Id:            1102,
+		UserId:        701,
+		Amount:        20,
+		Money:         20,
+		TradeNo:       "wallet-order",
+		PaymentMethod: "alipay",
+		CreateTime:    now,
+		CompleteTime:  now,
+		Status:        common.TopUpStatusSuccess,
+	})
+	require.NoError(t, DB.Create(&SubscriptionOrder{
+		UserId:          701,
+		PlanId:          plan.Id,
+		Money:           30,
+		TradeNo:         "subscription-order",
+		PaymentMethod:   "alipay",
+		PaymentProvider: PaymentProviderEpay,
+		Status:          common.TopUpStatusSuccess,
+		CreateTime:      now,
+		CompleteTime:    now,
+	}).Error)
+
+	records, total, err := GetAllTopUpRecords(&common.PageInfo{Page: 1, PageSize: 10}, TopUpQueryOptions{})
+
+	require.NoError(t, err)
+	require.EqualValues(t, 2, total)
+	require.Len(t, records, 2)
+	assert.Nil(t, records[0].SubscriptionPlan)
+	require.NotNil(t, records[1].SubscriptionPlan)
+	assert.Equal(t, plan.Id, records[1].SubscriptionPlan.Id)
+	assert.Equal(t, plan.Title, records[1].SubscriptionPlan.Title)
+}
+
 func TestGetTopUpOverviewAggregatesSuccessfulOrders(t *testing.T) {
 	truncateTables(t)
 

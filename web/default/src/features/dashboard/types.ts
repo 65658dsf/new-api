@@ -229,6 +229,11 @@ export interface TopUpUserInfo {
   email: string
 }
 
+export interface TopUpSubscriptionPlanInfo {
+  id: number
+  title: string
+}
+
 export interface TopUpRecord {
   id: number
   user_id: number
@@ -241,6 +246,7 @@ export interface TopUpRecord {
   complete_time?: number
   status: TopUpStatus
   user?: TopUpUserInfo
+  subscription_plan?: TopUpSubscriptionPlanInfo
 }
 
 export interface TopUpListResponse {

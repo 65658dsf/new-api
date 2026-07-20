@@ -35,9 +35,15 @@ type TopUpUserInfo struct {
 	Email       string `json:"email"`
 }
 
+type TopUpSubscriptionPlanInfo struct {
+	Id    int    `json:"id"`
+	Title string `json:"title"`
+}
+
 type TopUpRecord struct {
 	TopUp
-	User *TopUpUserInfo `json:"user,omitempty"`
+	User             *TopUpUserInfo             `json:"user,omitempty"`
+	SubscriptionPlan *TopUpSubscriptionPlanInfo `json:"subscription_plan,omitempty"`
 }
 
 type TopUpQueryOptions struct {
@@ -387,6 +393,58 @@ func attachTopUpUsers(records []*TopUpRecord) error {
 	return nil
 }
 
+func attachTopUpSubscriptionPlans(records []*TopUpRecord) error {
+	tradeNos := make([]string, 0, len(records))
+	for _, record := range records {
+		if record.TradeNo != "" {
+			tradeNos = append(tradeNos, record.TradeNo)
+		}
+	}
+	if len(tradeNos) == 0 {
+		return nil
+	}
+
+	var orders []SubscriptionOrder
+	if err := DB.Select("trade_no", "plan_id").Where("trade_no IN ?", tradeNos).Find(&orders).Error; err != nil {
+		return err
+	}
+	if len(orders) == 0 {
+		return nil
+	}
+
+	planIdsMap := make(map[int]struct{}, len(orders))
+	planIdByTradeNo := make(map[string]int, len(orders))
+	for _, order := range orders {
+		planIdsMap[order.PlanId] = struct{}{}
+		planIdByTradeNo[order.TradeNo] = order.PlanId
+	}
+
+	planIds := make([]int, 0, len(planIdsMap))
+	for planId := range planIdsMap {
+		planIds = append(planIds, planId)
+	}
+	var plans []SubscriptionPlan
+	if err := DB.Select("id", "title").Where("id IN ?", planIds).Find(&plans).Error; err != nil {
+		return err
+	}
+	planTitleById := make(map[int]string, len(plans))
+	for _, plan := range plans {
+		planTitleById[plan.Id] = plan.Title
+	}
+
+	for _, record := range records {
+		planId, ok := planIdByTradeNo[record.TradeNo]
+		if !ok {
+			continue
+		}
+		record.SubscriptionPlan = &TopUpSubscriptionPlanInfo{
+			Id:    planId,
+			Title: planTitleById[planId],
+		}
+	}
+	return nil
+}
+
 func GetAllTopUpRecords(pageInfo *common.PageInfo, options TopUpQueryOptions) (records []*TopUpRecord, total int64, err error) {
 	query := DB.Model(&TopUp{})
 	query, err = applyTopUpQueryOptions(query, options)
@@ -409,6 +467,9 @@ func GetAllTopUpRecords(pageInfo *common.PageInfo, options TopUpQueryOptions) (r
 		records = append(records, &TopUpRecord{TopUp: topupCopy})
 	}
 	if err = attachTopUpUsers(records); err != nil {
+		return nil, 0, err
+	}
+	if err = attachTopUpSubscriptionPlans(records); err != nil {
 		return nil, 0, err
 	}
 	return records, total, nil

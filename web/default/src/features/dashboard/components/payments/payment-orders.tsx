@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useCallback, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { type ColumnDef, type PaginationState } from '@tanstack/react-table'
+import type { ColumnDef, PaginationState } from '@tanstack/react-table'
 import {
   CircleCheckBig,
   CircleEllipsis,
@@ -195,6 +195,24 @@ function OrderDetailDialog(props: {
               label={t('Payment Method')}
               value={order.payment_method}
             />
+            {order.subscription_plan ? (
+              <InfoItem
+                label={t('Plan Name')}
+                value={
+                  <div className='flex min-w-0 items-baseline gap-2'>
+                    <span className='truncate'>
+                      {order.subscription_plan.title ||
+                        `#${order.subscription_plan.id}`}
+                    </span>
+                    {order.subscription_plan.title ? (
+                      <span className='text-muted-foreground shrink-0 font-mono text-xs'>
+                        #{order.subscription_plan.id}
+                      </span>
+                    ) : null}
+                  </div>
+                }
+              />
+            ) : null}
             <InfoItem
               label={t('Amount')}
               value={formatBillingCurrencyFromUSD(order.amount)}
@@ -497,6 +515,7 @@ export function PaymentOrders() {
             <Select
               value={paymentMethod}
               onValueChange={(value) => {
+                if (value === null) return
                 setPaymentMethod(value)
                 resetToFirstPage()
               }}
