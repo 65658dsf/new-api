@@ -430,7 +430,8 @@ export function PaymentOrders() {
                 {t('Complete Order')}
               </Button>
             ) : null}
-            {row.original.status === 'failed' ||
+            {row.original.status === 'success' ||
+            row.original.status === 'failed' ||
             row.original.status === 'expired' ? (
               <Button
                 variant='ghost'

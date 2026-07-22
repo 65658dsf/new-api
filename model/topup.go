@@ -107,7 +107,7 @@ var (
 	ErrPaymentMethodMismatch = errors.New("payment method mismatch")
 	ErrTopUpNotFound         = errors.New("topup not found")
 	ErrTopUpStatusInvalid    = errors.New("topup status invalid")
-	ErrTopUpDeleteNotAllowed = errors.New("only failed or expired topup orders can be deleted")
+	ErrTopUpDeleteNotAllowed = errors.New("only successful, failed, or expired topup orders can be deleted")
 )
 
 type inviterPercentageReward struct {
@@ -227,8 +227,9 @@ func GetTopUpById(id int) *TopUp {
 	return topUp
 }
 
-// DeleteTopUpByID permanently removes a terminal unpaid top-up order.
-// Pending and successful orders must remain available for payment callbacks and accounting.
+// DeleteTopUpByID permanently removes a completed or terminal top-up order.
+// It only deletes the order record and never reverses credited user quota,
+// inviter rewards, invoices, subscriptions, or logs.
 func DeleteTopUpByID(id int) error {
 	if id <= 0 {
 		return errors.New("invalid topup id")
@@ -242,7 +243,9 @@ func DeleteTopUpByID(id int) error {
 			}
 			return err
 		}
-		if topUp.Status != common.TopUpStatusFailed && topUp.Status != common.TopUpStatusExpired {
+		if topUp.Status != common.TopUpStatusSuccess &&
+			topUp.Status != common.TopUpStatusFailed &&
+			topUp.Status != common.TopUpStatusExpired {
 			return ErrTopUpDeleteNotAllowed
 		}
 		return tx.Delete(&topUp).Error

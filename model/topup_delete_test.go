@@ -18,7 +18,7 @@ func TestDeleteTopUpByID(t *testing.T) {
 		{name: "failed order", status: common.TopUpStatusFailed, canDelete: true},
 		{name: "expired order", status: common.TopUpStatusExpired, canDelete: true},
 		{name: "pending order", status: common.TopUpStatusPending, canDelete: false},
-		{name: "successful order", status: common.TopUpStatusSuccess, canDelete: false},
+		{name: "successful order", status: common.TopUpStatusSuccess, canDelete: true},
 	}
 
 	for _, testCase := range testCases {
@@ -45,6 +45,50 @@ func TestDeleteTopUpByID(t *testing.T) {
 			assert.NotNil(t, GetTopUpById(topUp.Id))
 		})
 	}
+}
+
+func TestDeleteSuccessfulTopUpByIDRetainsCreditedRewards(t *testing.T) {
+	truncateTables(t)
+
+	creditedUser := &User{
+		Id:       101,
+		Username: "topup_delete_user",
+		Status:   common.UserStatusEnabled,
+		Quota:    12345,
+		AffCode:  "topup-delete-user",
+	}
+	inviter := &User{
+		Id:              102,
+		Username:        "topup_delete_inviter",
+		Status:          common.UserStatusEnabled,
+		AffCode:         "topup-delete-inviter",
+		AffQuota:        678,
+		AffHistoryQuota: 910,
+	}
+	require.NoError(t, DB.Create(creditedUser).Error)
+	require.NoError(t, DB.Create(inviter).Error)
+
+	topUp := &TopUp{
+		UserId:     creditedUser.Id,
+		Amount:     100,
+		Money:      1,
+		TradeNo:    "delete-successful-topup",
+		CreateTime: time.Now().Unix(),
+		Status:     common.TopUpStatusSuccess,
+	}
+	require.NoError(t, topUp.Insert())
+
+	require.NoError(t, DeleteTopUpByID(topUp.Id))
+
+	var creditedUserAfter User
+	require.NoError(t, DB.First(&creditedUserAfter, creditedUser.Id).Error)
+	assert.Equal(t, creditedUser.Quota, creditedUserAfter.Quota)
+
+	var inviterAfter User
+	require.NoError(t, DB.First(&inviterAfter, inviter.Id).Error)
+	assert.Equal(t, inviter.AffQuota, inviterAfter.AffQuota)
+	assert.Equal(t, inviter.AffHistoryQuota, inviterAfter.AffHistoryQuota)
+	assert.Nil(t, GetTopUpById(topUp.Id))
 }
 
 func TestDeleteTopUpByIDReturnsNotFound(t *testing.T) {

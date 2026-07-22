@@ -503,7 +503,7 @@ func AdminCompleteTopUp(c *gin.Context) {
 	common.ApiSuccess(c, nil)
 }
 
-// AdminDeleteTopUp permanently deletes a failed or expired top-up order.
+// AdminDeleteTopUp permanently deletes a completed, failed, or expired top-up order.
 func AdminDeleteTopUp(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil || id <= 0 {
