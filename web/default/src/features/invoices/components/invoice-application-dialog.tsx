@@ -17,11 +17,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
+import { zodResolver } from '@hookform/resolvers/zod'
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+
 import { Dialog } from '@/components/dialog'
 import { Button } from '@/components/ui/button'
 import {
@@ -34,19 +35,29 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { formatBillingCurrencyFromUSD } from '@/lib/currency'
+import { useAuthStore } from '@/stores/auth-store'
+
+import {
+  getInvoiceApplicationSchema,
+  INVOICE_APPLICATION_DEFAULT_VALUES,
+  type InvoiceApplicationFormValues,
+} from '../lib/validation'
 import type {
   InvoiceApplication,
   InvoiceApplicationOrder,
   InvoiceApplicationPayload,
   InvoiceTopUpRecord,
 } from '../types'
-import {
-  getInvoiceApplicationSchema,
-  INVOICE_APPLICATION_DEFAULT_VALUES,
-  type InvoiceApplicationFormValues,
-} from '../lib/validation'
 
 type InvoiceApplicationDialogProps = {
   open: boolean
@@ -54,7 +65,7 @@ type InvoiceApplicationDialogProps = {
   application?: InvoiceApplication | null
   isSubmitting: boolean
   onOpenChange: (open: boolean) => void
-  onSubmit: (values: InvoiceApplicationPayload) => Promise<void>
+  onSubmit: (values: InvoiceApplicationPayload) => Promise<boolean>
 }
 
 function invoiceOrderLines(
@@ -85,10 +96,9 @@ function invoiceOrderLines(
   return []
 }
 
-export function InvoiceApplicationDialog(
-  props: InvoiceApplicationDialogProps
-) {
+export function InvoiceApplicationDialog(props: InvoiceApplicationDialogProps) {
   const { t } = useTranslation()
+  const userEmail = useAuthStore((state) => state.auth.user?.email ?? '')
   const [pendingPayload, setPendingPayload] =
     useState<InvoiceApplicationPayload | null>(null)
   const form = useForm<InvoiceApplicationFormValues>({
@@ -98,6 +108,10 @@ export function InvoiceApplicationDialog(
   const orderLines = invoiceOrderLines(props.application, props.orders)
   const firstTradeNo = orderLines[0]?.trade_no ?? ''
   const totalAmount = orderLines.reduce((sum, order) => sum + order.amount, 0)
+  const buyerType = form.watch('buyer_type')
+  let submitLabel = t('Submit Application')
+  if (props.application) submitLabel = t('Resubmit Application')
+  if (props.isSubmitting) submitLabel = t('Submitting...')
 
   useEffect(() => {
     if (!props.open) {
@@ -108,14 +122,16 @@ export function InvoiceApplicationDialog(
     form.reset({
       ...INVOICE_APPLICATION_DEFAULT_VALUES,
       trade_no: firstTradeNo,
+      buyer_type: props.application?.buyer_type ?? 'company',
       title: props.application?.title ?? '',
       tax_id: props.application?.tax_id ?? '',
       buyer_address: props.application?.buyer_address ?? '',
       buyer_phone: props.application?.buyer_phone ?? '',
       bank_name: props.application?.bank_name ?? '',
       bank_account: props.application?.bank_account ?? '',
+      recipient_email: props.application?.recipient_email || userEmail,
     })
-  }, [firstTradeNo, form, props.application, props.open])
+  }, [firstTradeNo, form, props.application, props.open, userEmail])
 
   const handleInvalidSubmit = () => {
     toast.error(t('Please check the invoice form'))
@@ -132,8 +148,10 @@ export function InvoiceApplicationDialog(
 
   const handleConfirmedSubmit = async () => {
     if (!pendingPayload) return
-    await props.onSubmit(pendingPayload)
-    setPendingPayload(null)
+    const submitted = await props.onSubmit(pendingPayload)
+    if (submitted) {
+      setPendingPayload(null)
+    }
   }
 
   return (
@@ -170,11 +188,7 @@ export function InvoiceApplicationDialog(
               form='invoice-application-form'
               disabled={props.isSubmitting || Boolean(pendingPayload)}
             >
-              {props.isSubmitting
-                ? t('Submitting...')
-                : props.application
-                  ? t('Resubmit Application')
-                  : t('Submit Application')}
+              {submitLabel}
             </Button>
           </>
         }
@@ -222,6 +236,54 @@ export function InvoiceApplicationDialog(
             <div className='grid gap-4 sm:grid-cols-2'>
               <FormField
                 control={form.control}
+                name='buyer_type'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Buyer Type')}</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectGroup>
+                          <SelectItem value='individual'>
+                            {t('Individual')}
+                          </SelectItem>
+                          <SelectItem value='company'>
+                            {t('Company')}
+                          </SelectItem>
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name='recipient_email'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Recipient Email')}</FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        type='email'
+                        autoComplete='email'
+                        maxLength={254}
+                        placeholder='invoice@example.com'
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
                 name='title'
                 render={({ field }) => (
                   <FormItem>
@@ -229,6 +291,7 @@ export function InvoiceApplicationDialog(
                     <FormControl>
                       <Input
                         {...field}
+                        maxLength={50}
                         placeholder={t('Enter the full invoice title')}
                       />
                     </FormControl>
@@ -246,22 +309,30 @@ export function InvoiceApplicationDialog(
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>
-                      {t('Unified Social Credit Code / Taxpayer ID')}
+                      {buyerType === 'individual'
+                        ? t('Resident Identity Card Number')
+                        : t('Unified Social Credit Code / Taxpayer ID')}
                     </FormLabel>
                     <FormControl>
                       <Input
                         {...field}
-                        placeholder={t('Enter tax identification number')}
+                        placeholder={
+                          buyerType === 'individual'
+                            ? t('Resident Identity Card Number')
+                            : t('Enter tax identification number')
+                        }
                         onChange={(event) =>
                           field.onChange(event.target.value.toUpperCase())
                         }
                       />
                     </FormControl>
-                    <FormDescription>
-                      {t(
-                        'Supports 18-digit unified social credit code or 15/17/20-digit taxpayer ID.'
-                      )}
-                    </FormDescription>
+                    {buyerType === 'company' ? (
+                      <FormDescription>
+                        {t(
+                          'Supports an 18-character unified social credit code or a 15-20 digit taxpayer ID.'
+                        )}
+                      </FormDescription>
+                    ) : null}
                     <FormMessage />
                   </FormItem>
                 )}
@@ -276,6 +347,7 @@ export function InvoiceApplicationDialog(
                     <FormControl>
                       <Input
                         {...field}
+                        maxLength={64}
                         placeholder={t('Mobile or landline number')}
                       />
                     </FormControl>
@@ -294,7 +366,11 @@ export function InvoiceApplicationDialog(
                   <FormItem>
                     <FormLabel>{t('Buyer Bank')}</FormLabel>
                     <FormControl>
-                      <Input {...field} placeholder={t('Bank name')} />
+                      <Input
+                        {...field}
+                        maxLength={255}
+                        placeholder={t('Bank name')}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -329,6 +405,7 @@ export function InvoiceApplicationDialog(
                   <FormControl>
                     <Textarea
                       {...field}
+                      maxLength={255}
                       placeholder={t('Buyer address')}
                       className='min-h-20 resize-none'
                     />
@@ -366,30 +443,52 @@ export function InvoiceApplicationDialog(
               onClick={() => void handleConfirmedSubmit()}
               disabled={props.isSubmitting}
             >
-              {props.isSubmitting ? t('Submitting...') : t('Confirm and Submit')}
+              {props.isSubmitting
+                ? t('Submitting...')
+                : t('Confirm and Submit')}
             </Button>
           </>
         }
       >
         <div className='space-y-4'>
-          <div className='border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100 rounded-md border p-3 text-sm'>
+          <div className='rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100'>
             {t(
               'Invoice results are usually issued within 24 hours after approval.'
             )}
           </div>
           <div className='space-y-2 text-sm'>
             <div className='grid gap-1 sm:grid-cols-[120px_1fr]'>
-              <span className='text-muted-foreground'>{t('Invoice Title')}</span>
+              <span className='text-muted-foreground'>{t('Buyer Type')}</span>
+              <span>
+                {pendingPayload?.buyer_type === 'individual'
+                  ? t('Individual')
+                  : t('Company')}
+              </span>
+            </div>
+            <div className='grid gap-1 sm:grid-cols-[120px_1fr]'>
+              <span className='text-muted-foreground'>
+                {t('Invoice Title')}
+              </span>
               <span className='min-w-0 break-words'>
                 {pendingPayload?.title || '-'}
               </span>
             </div>
             <div className='grid gap-1 sm:grid-cols-[120px_1fr]'>
               <span className='text-muted-foreground'>
-                {t('Unified Social Credit Code / Taxpayer ID')}
+                {pendingPayload?.buyer_type === 'individual'
+                  ? t('Resident Identity Card Number')
+                  : t('Unified Social Credit Code / Taxpayer ID')}
               </span>
-              <span className='min-w-0 break-words font-mono'>
+              <span className='min-w-0 font-mono break-words'>
                 {pendingPayload?.tax_id || '-'}
+              </span>
+            </div>
+            <div className='grid gap-1 sm:grid-cols-[120px_1fr]'>
+              <span className='text-muted-foreground'>
+                {t('Recipient Email')}
+              </span>
+              <span className='min-w-0 break-words'>
+                {pendingPayload?.recipient_email || '-'}
               </span>
             </div>
           </div>

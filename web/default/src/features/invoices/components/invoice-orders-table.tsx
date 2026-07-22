@@ -17,12 +17,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import { useCallback, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { type ColumnDef, type PaginationState } from '@tanstack/react-table'
+import type { ColumnDef, PaginationState } from '@tanstack/react-table'
 import { CircleCheckBig, FilePlus2, RefreshCcw, Search } from 'lucide-react'
+import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+
 import { DataTablePage, useDataTable } from '@/components/data-table'
 import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
@@ -30,17 +31,15 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { formatBillingCurrencyFromUSD } from '@/lib/currency'
 import { formatTimestampToDate } from '@/lib/format'
-import {
-  getInvoiceTopUpRecords,
-  submitInvoiceApplication,
-} from '../api'
-import type {
-  InvoiceApplicationPayload,
-  InvoiceTopUpRecord,
-} from '../types'
+
+import { getInvoiceTopUpRecords, submitInvoiceApplication } from '../api'
+import type { InvoiceApplicationPayload, InvoiceTopUpRecord } from '../types'
 import { InvoiceApplicationDialog } from './invoice-application-dialog'
 
+const EMPTY_ORDERS: InvoiceTopUpRecord[] = []
+
 function canSelectInvoiceOrder(order: InvoiceTopUpRecord) {
+  if (order.external_invoice_id) return false
   return !order.invoice_applied || order.invoice_status === 'rejected'
 }
 
@@ -100,7 +99,7 @@ export function InvoiceOrdersTable() {
     },
   })
 
-  const rows = ordersQuery.data?.items ?? []
+  const rows = ordersQuery.data?.items ?? EMPTY_ORDERS
   const total = ordersQuery.data?.total ?? 0
   const selectedTradeNoSet = useMemo(
     () => new Set(selectedTradeNos),
@@ -111,7 +110,11 @@ export function InvoiceOrdersTable() {
     [rows]
   )
   const selectedOrders = useMemo(
-    () => rows.filter((row) => selectedTradeNoSet.has(row.trade_no)),
+    () =>
+      rows.filter(
+        (row) =>
+          selectedTradeNoSet.has(row.trade_no) && canSelectInvoiceOrder(row)
+      ),
     [rows, selectedTradeNoSet]
   )
   const allPageRowsSelected =
@@ -224,8 +227,18 @@ export function InvoiceOrdersTable() {
         id: 'actions',
         header: () => t('Actions'),
         cell: ({ row }) => {
+          if (row.original.external_invoice_id) {
+            return (
+              <span className='text-muted-foreground text-sm'>
+                {t('Managed externally')}
+              </span>
+            )
+          }
           const canResubmit = row.original.invoice_status === 'rejected'
           const disabled = row.original.invoice_applied && !canResubmit
+          let actionLabel = t('Apply for Invoice')
+          if (disabled) actionLabel = t('Applied')
+          if (canResubmit) actionLabel = t('Resubmit')
           return (
             <Button
               variant={disabled ? 'outline' : 'default'}
@@ -234,11 +247,7 @@ export function InvoiceOrdersTable() {
               disabled={disabled}
             >
               <FilePlus2 className='size-4' />
-              {canResubmit
-                ? t('Resubmit')
-                : disabled
-                  ? t('Applied')
-                  : t('Apply for Invoice')}
+              {actionLabel}
             </Button>
           )
         },
@@ -286,9 +295,11 @@ export function InvoiceOrdersTable() {
 
   const handleSubmit = async (values: InvoiceApplicationPayload) => {
     try {
-      await submitMutation.mutateAsync(values)
+      const result = await submitMutation.mutateAsync(values)
+      return Boolean(result.success)
     } catch {
       /* handled by mutation */
+      return false
     }
   }
 

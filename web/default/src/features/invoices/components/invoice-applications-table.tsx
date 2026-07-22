@@ -17,17 +17,19 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import { useCallback, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { type ColumnDef, type PaginationState } from '@tanstack/react-table'
+import type { ColumnDef, PaginationState } from '@tanstack/react-table'
 import { Download, FilePenLine, RefreshCcw, RotateCcw } from 'lucide-react'
+import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+
 import { DataTablePage, useDataTable } from '@/components/data-table'
 import { Dialog } from '@/components/dialog'
 import { Button } from '@/components/ui/button'
 import { formatBillingCurrencyFromUSD } from '@/lib/currency'
 import { formatTimestampToDate } from '@/lib/format'
+
 import {
   cancelInvoiceApplication,
   downloadInvoicePDF,
@@ -140,7 +142,11 @@ export function InvoiceApplicationsTable() {
 
   const handleDownload = useCallback(
     async (application: InvoiceApplication) => {
-      if (application.status !== 'approved' || !application.has_pdf) {
+      const canDownload =
+        application.has_pdf &&
+        (application.status === 'approved' ||
+          application.status === 'completed')
+      if (!canDownload) {
         toast.error(t('Invoice PDF is not available yet'))
         return
       }
@@ -149,6 +155,11 @@ export function InvoiceApplicationsTable() {
       try {
         const blob = await downloadInvoicePDF(application.id)
         if (!blob || blob.size === 0) {
+          toast.error(t('Download failed'))
+          return
+        }
+        const signature = await blob.slice(0, 5).text()
+        if (signature !== '%PDF-') {
           toast.error(t('Download failed'))
           return
         }
@@ -230,10 +241,11 @@ export function InvoiceApplicationsTable() {
         cell: ({ row }) => (
           <div className='space-y-1'>
             <InvoiceStatusBadge status={row.original.status} />
-            {row.original.status === 'rejected' &&
-            row.original.reject_reason ? (
+            {(row.original.status === 'rejected' &&
+              row.original.reject_reason) ||
+            row.original.review_note ? (
               <div className='text-muted-foreground max-w-64 truncate text-xs'>
-                {row.original.reject_reason}
+                {row.original.reject_reason || row.original.review_note}
               </div>
             ) : null}
           </div>
@@ -246,9 +258,17 @@ export function InvoiceApplicationsTable() {
         header: () => t('Actions'),
         cell: ({ row }) => {
           const canDownload =
-            row.original.status === 'approved' && row.original.has_pdf
-          const canCancel = row.original.status !== 'approved'
-          if (row.original.status === 'rejected') {
+            (row.original.status === 'approved' ||
+              row.original.status === 'completed') &&
+            row.original.has_pdf
+          const canCancel =
+            !row.original.external_invoice_id &&
+            row.original.status !== 'approved' &&
+            row.original.status !== 'completed'
+          if (
+            row.original.status === 'rejected' &&
+            !row.original.external_invoice_id
+          ) {
             return (
               <div className='flex items-center gap-1.5'>
                 <Button
@@ -268,6 +288,13 @@ export function InvoiceApplicationsTable() {
                   {t('Cancel Application')}
                 </Button>
               </div>
+            )
+          }
+          if (row.original.external_invoice_id && !canDownload) {
+            return (
+              <span className='text-muted-foreground text-sm'>
+                {t('Managed externally')}
+              </span>
             )
           }
           if (canDownload) {
@@ -334,9 +361,11 @@ export function InvoiceApplicationsTable() {
 
   const handleResubmit = async (values: InvoiceApplicationPayload) => {
     try {
-      await submitMutation.mutateAsync(values)
+      const result = await submitMutation.mutateAsync(values)
+      return Boolean(result.success)
     } catch {
       /* handled by mutation */
+      return false
     }
   }
 

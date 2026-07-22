@@ -17,24 +17,34 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import { CircleCheckBig, CircleEllipsis, CircleX } from 'lucide-react'
+import {
+  CircleCheckBig,
+  CircleEllipsis,
+  CircleX,
+  FileCheck2,
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+
 import { StatusBadge } from '@/components/status-badge'
+
 import type { InvoiceStatus } from '../types'
 
-export function getInvoiceStatusLabelKey(status: InvoiceStatus) {
+function getInvoiceStatusLabelKey(status: InvoiceStatus) {
+  if (status === 'completed') return 'Completed'
   if (status === 'approved') return 'Approved'
   if (status === 'rejected') return 'Rejected'
   return 'Pending Review'
 }
 
 function invoiceStatusVariant(status: InvoiceStatus) {
+  if (status === 'completed') return 'success' as const
   if (status === 'approved') return 'success' as const
   if (status === 'rejected') return 'danger' as const
   return 'warning' as const
 }
 
 function invoiceStatusIcon(status: InvoiceStatus) {
+  if (status === 'completed') return FileCheck2
   if (status === 'approved') return CircleCheckBig
   if (status === 'rejected') return CircleX
   return CircleEllipsis

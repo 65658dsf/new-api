@@ -17,7 +17,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-export type InvoiceStatus = 'pending' | 'approved' | 'rejected'
+export type InvoiceStatus = 'pending' | 'approved' | 'rejected' | 'completed'
+
+export type InvoiceBuyerType = 'individual' | 'company'
 
 export type InvoiceTopUpStatus = 'success' | 'pending' | 'failed' | 'expired'
 
@@ -40,6 +42,7 @@ export interface InvoiceTopUpRecord {
   complete_time?: number
   status: InvoiceTopUpStatus
   invoice_application_id?: number
+  external_invoice_id?: number
   invoice_status?: InvoiceStatus
   invoice_applied: boolean
 }
@@ -62,12 +65,16 @@ export interface InvoiceApplication {
   trade_no: string
   amount: number
   money: number
+  buyer_type: InvoiceBuyerType
   title: string
   tax_id: string
   buyer_address: string
   buyer_phone: string
   bank_name: string
   bank_account: string
+  recipient_email: string
+  external_invoice_id?: number
+  review_note?: string
   status: InvoiceStatus
   reject_reason?: string
   pdf_file_name?: string
@@ -83,12 +90,14 @@ export interface InvoiceApplication {
 export interface InvoiceApplicationPayload {
   trade_no: string
   trade_nos?: string[]
+  buyer_type: InvoiceBuyerType
   title: string
   tax_id: string
   buyer_address: string
   buyer_phone: string
   bank_name: string
   bank_account: string
+  recipient_email: string
 }
 
 export interface InvoiceListQuery {

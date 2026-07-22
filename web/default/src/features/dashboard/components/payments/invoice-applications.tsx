@@ -17,9 +17,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import { useCallback, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { type ColumnDef, type PaginationState } from '@tanstack/react-table'
+import type { ColumnDef, PaginationState } from '@tanstack/react-table'
 import {
   CheckCircle2,
   Copy,
@@ -28,8 +27,10 @@ import {
   Trash2,
   XCircle,
 } from 'lucide-react'
+import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+
 import { DataTablePage, useDataTable } from '@/components/data-table'
 import { Dialog } from '@/components/dialog'
 import { Button } from '@/components/ui/button'
@@ -43,30 +44,33 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { formatBillingCurrencyFromUSD } from '@/lib/currency'
-import { formatTimestampToDate } from '@/lib/format'
 import {
   approveInvoiceApplication,
   deleteAdminInvoiceApplication,
   getAdminInvoiceApplications,
   rejectInvoiceApplication,
 } from '@/features/invoices/api'
+import { InvoiceStatusBadge } from '@/features/invoices/components/invoice-status-badge'
 import type {
   InvoiceApplication,
   InvoiceApplicationOrder,
   InvoiceStatus,
 } from '@/features/invoices/types'
-import { InvoiceStatusBadge } from '@/features/invoices/components/invoice-status-badge'
+import { formatBillingCurrencyFromUSD } from '@/lib/currency'
+import { formatTimestampToDate } from '@/lib/format'
 
 const MAX_INVOICE_PDF_BYTES = 10 * 1024 * 1024
 
-const STATUS_OPTIONS: Array<{ value: 'all' | InvoiceStatus; labelKey: string }> =
-  [
-    { value: 'all', labelKey: 'All Status' },
-    { value: 'pending', labelKey: 'Pending Review' },
-    { value: 'approved', labelKey: 'Approved' },
-    { value: 'rejected', labelKey: 'Rejected' },
-  ]
+const STATUS_OPTIONS: Array<{
+  value: 'all' | InvoiceStatus
+  labelKey: string
+}> = [
+  { value: 'all', labelKey: 'All Status' },
+  { value: 'pending', labelKey: 'Pending Review' },
+  { value: 'approved', labelKey: 'Approved' },
+  { value: 'rejected', labelKey: 'Rejected' },
+  { value: 'completed', labelKey: 'Completed' },
+]
 
 function applicantName(application: InvoiceApplication) {
   return (
@@ -416,7 +420,8 @@ export function InvoiceApplications() {
                 </div>
               ) : null}
               <div className='text-muted-foreground text-xs font-medium'>
-                {t('Total Amount')}: {formatBillingCurrencyFromUSD(row.original.amount)}
+                {t('Total Amount')}:{' '}
+                {formatBillingCurrencyFromUSD(row.original.amount)}
               </div>
             </div>
           )
@@ -468,10 +473,11 @@ export function InvoiceApplications() {
         cell: ({ row }) => (
           <div className='space-y-1'>
             <InvoiceStatusBadge status={row.original.status} />
-            {row.original.status === 'rejected' &&
-            row.original.reject_reason ? (
+            {(row.original.status === 'rejected' &&
+              row.original.reject_reason) ||
+            row.original.review_note ? (
               <div className='text-muted-foreground max-w-52 truncate text-xs'>
-                {row.original.reject_reason}
+                {row.original.reject_reason || row.original.review_note}
               </div>
             ) : null}
           </div>
@@ -482,42 +488,51 @@ export function InvoiceApplications() {
       {
         id: 'actions',
         header: () => t('Actions'),
-        cell: ({ row }) => (
-          <div className='flex items-center gap-1.5'>
-            {row.original.status === 'pending' ? (
-              <>
-                <Button
-                  variant='outline'
-                  size='sm'
-                  onClick={() => openApproveDialog(row.original)}
-                >
-                  <CheckCircle2 className='size-4' />
-                  {t('Approve and Upload')}
-                </Button>
-                <Button
-                  variant='destructive'
-                  size='sm'
-                  onClick={() => openRejectDialog(row.original)}
-                >
-                  <XCircle className='size-4' />
-                  {t('Reject')}
-                </Button>
-              </>
-            ) : (
+        cell: ({ row }) => {
+          if (row.original.external_invoice_id) {
+            return (
               <span className='text-muted-foreground text-sm'>
-                {t('Processed')}
+                {t('Managed externally')}
               </span>
-            )}
-            <Button
-              variant='destructive'
-              size='sm'
-              onClick={() => openDeleteDialog(row.original)}
-            >
-              <Trash2 className='size-4' />
-              {t('Delete')}
-            </Button>
-          </div>
-        ),
+            )
+          }
+          return (
+            <div className='flex items-center gap-1.5'>
+              {row.original.status === 'pending' ? (
+                <>
+                  <Button
+                    variant='outline'
+                    size='sm'
+                    onClick={() => openApproveDialog(row.original)}
+                  >
+                    <CheckCircle2 className='size-4' />
+                    {t('Approve and Upload')}
+                  </Button>
+                  <Button
+                    variant='destructive'
+                    size='sm'
+                    onClick={() => openRejectDialog(row.original)}
+                  >
+                    <XCircle className='size-4' />
+                    {t('Reject')}
+                  </Button>
+                </>
+              ) : (
+                <span className='text-muted-foreground text-sm'>
+                  {t('Processed')}
+                </span>
+              )}
+              <Button
+                variant='destructive'
+                size='sm'
+                onClick={() => openDeleteDialog(row.original)}
+              >
+                <Trash2 className='size-4' />
+                {t('Delete')}
+              </Button>
+            </div>
+          )
+        },
         size: 340,
         meta: { pinned: 'right' as const },
       },
@@ -610,7 +625,9 @@ export function InvoiceApplications() {
         open={Boolean(approvingApplication)}
         onOpenChange={(open) => !open && setApprovingApplication(null)}
         title={t('Approve and Issue Invoice')}
-        description={t('Upload the issued invoice PDF to approve this request.')}
+        description={t(
+          'Upload the issued invoice PDF to approve this request.'
+        )}
         footer={
           <>
             <Button

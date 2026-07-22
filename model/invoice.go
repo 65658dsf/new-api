@@ -2,9 +2,12 @@ package model
 
 import (
 	"errors"
+	"fmt"
+	"net/mail"
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
 
@@ -12,35 +15,44 @@ import (
 )
 
 const (
-	InvoiceStatusPending  = "pending"
-	InvoiceStatusApproved = "approved"
-	InvoiceStatusRejected = "rejected"
+	InvoiceStatusPending   = "pending"
+	InvoiceStatusApproved  = "approved"
+	InvoiceStatusRejected  = "rejected"
+	InvoiceStatusCompleted = "completed"
+
+	InvoiceBuyerTypeIndividual = "individual"
+	InvoiceBuyerTypeCompany    = "company"
+	MaxInvoiceOrderCount       = 20
 )
 
 type InvoiceApplication struct {
-	Id           int                        `json:"id"`
-	UserId       int                        `json:"user_id" gorm:"index;not null"`
-	TopUpId      int                        `json:"topup_id" gorm:"index;not null"`
-	TradeNo      string                     `json:"trade_no" gorm:"type:varchar(255);uniqueIndex;not null"`
-	Amount       int64                      `json:"amount"`
-	Money        float64                    `json:"money"`
-	Title        string                     `json:"title" gorm:"type:varchar(255);not null"`
-	TaxId        string                     `json:"tax_id" gorm:"type:varchar(64);not null;index"`
-	BuyerAddress string                     `json:"buyer_address" gorm:"type:varchar(255)"`
-	BuyerPhone   string                     `json:"buyer_phone" gorm:"type:varchar(64)"`
-	BankName     string                     `json:"bank_name" gorm:"type:varchar(255)"`
-	BankAccount  string                     `json:"bank_account" gorm:"type:varchar(128)"`
-	Status       string                     `json:"status" gorm:"type:varchar(20);index;not null"`
-	RejectReason string                     `json:"reject_reason" gorm:"type:text"`
-	PdfPath      string                     `json:"-" gorm:"type:varchar(512)"`
-	PdfFileName  string                     `json:"pdf_file_name,omitempty" gorm:"type:varchar(255)"`
-	CreatedAt    int64                      `json:"created_at" gorm:"index"`
-	UpdatedAt    int64                      `json:"updated_at"`
-	HandledAt    int64                      `json:"handled_at"`
-	HandlerId    int                        `json:"handler_id"`
-	User         *TopUpUserInfo             `json:"user,omitempty" gorm:"-"`
-	Orders       []*InvoiceApplicationOrder `json:"orders,omitempty" gorm:"-"`
-	HasPdf       bool                       `json:"has_pdf" gorm:"-"`
+	Id                int                        `json:"id"`
+	UserId            int                        `json:"user_id" gorm:"index;not null"`
+	TopUpId           int                        `json:"topup_id" gorm:"index;not null"`
+	TradeNo           string                     `json:"trade_no" gorm:"type:varchar(255);uniqueIndex;not null"`
+	Amount            int64                      `json:"amount"`
+	Money             float64                    `json:"money"`
+	BuyerType         string                     `json:"buyer_type" gorm:"type:varchar(20)"`
+	Title             string                     `json:"title" gorm:"type:varchar(255);not null"`
+	TaxId             string                     `json:"tax_id" gorm:"type:varchar(64);not null;index"`
+	BuyerAddress      string                     `json:"buyer_address" gorm:"type:varchar(255)"`
+	BuyerPhone        string                     `json:"buyer_phone" gorm:"type:varchar(64)"`
+	BankName          string                     `json:"bank_name" gorm:"type:varchar(255)"`
+	BankAccount       string                     `json:"bank_account" gorm:"type:varchar(128)"`
+	RecipientEmail    string                     `json:"recipient_email" gorm:"type:varchar(254)"`
+	ExternalInvoiceId int64                      `json:"external_invoice_id,omitempty" gorm:"index"`
+	ReviewNote        string                     `json:"review_note,omitempty" gorm:"type:text"`
+	Status            string                     `json:"status" gorm:"type:varchar(20);index;not null"`
+	RejectReason      string                     `json:"reject_reason" gorm:"type:text"`
+	PdfPath           string                     `json:"-" gorm:"type:varchar(512)"`
+	PdfFileName       string                     `json:"pdf_file_name,omitempty" gorm:"type:varchar(255)"`
+	CreatedAt         int64                      `json:"created_at" gorm:"index"`
+	UpdatedAt         int64                      `json:"updated_at"`
+	HandledAt         int64                      `json:"handled_at"`
+	HandlerId         int                        `json:"handler_id"`
+	User              *TopUpUserInfo             `json:"user,omitempty" gorm:"-"`
+	Orders            []*InvoiceApplicationOrder `json:"orders,omitempty" gorm:"-"`
+	HasPdf            bool                       `json:"has_pdf" gorm:"-"`
 }
 
 type InvoiceApplicationOrder struct {
@@ -55,14 +67,16 @@ type InvoiceApplicationOrder struct {
 }
 
 type InvoiceApplicationSubmit struct {
-	TradeNo      string   `json:"trade_no"`
-	TradeNos     []string `json:"trade_nos"`
-	Title        string   `json:"title"`
-	TaxId        string   `json:"tax_id"`
-	BuyerAddress string   `json:"buyer_address"`
-	BuyerPhone   string   `json:"buyer_phone"`
-	BankName     string   `json:"bank_name"`
-	BankAccount  string   `json:"bank_account"`
+	TradeNo        string   `json:"trade_no"`
+	TradeNos       []string `json:"trade_nos"`
+	BuyerType      string   `json:"buyer_type"`
+	Title          string   `json:"title"`
+	TaxId          string   `json:"tax_id"`
+	BuyerAddress   string   `json:"buyer_address"`
+	BuyerPhone     string   `json:"buyer_phone"`
+	BankName       string   `json:"bank_name"`
+	BankAccount    string   `json:"bank_account"`
+	RecipientEmail string   `json:"recipient_email"`
 }
 
 type InvoiceApplicationQueryOptions struct {
@@ -73,14 +87,23 @@ type InvoiceApplicationQueryOptions struct {
 type InvoiceTopUpRecord struct {
 	TopUp
 	InvoiceApplicationId int    `json:"invoice_application_id,omitempty"`
+	ExternalInvoiceId    int64  `json:"external_invoice_id,omitempty"`
 	InvoiceStatus        string `json:"invoice_status,omitempty"`
 	InvoiceApplied       bool   `json:"invoice_applied"`
 }
 
 var (
-	invoiceTaxIdPattern = regexp.MustCompile(`^(?:[0-9A-Z]{18}|[0-9A-Z]{15}|[0-9A-Z]{17}|[0-9A-Z]{20})$`)
-	mobilePhonePattern  = regexp.MustCompile(`^1[3-9]\d{9}$`)
-	landlinePattern     = regexp.MustCompile(`^0\d{2,3}-?\d{7,8}(?:-\d{1,6})?$`)
+	ErrUnknownInvoiceStatus    = errors.New("开票平台返回了未知的申请状态")
+	ErrInvoiceStatusRegression = errors.New("开票平台申请状态不能回退")
+)
+
+var (
+	invoiceUnifiedCreditCodePattern = regexp.MustCompile(`^[0-9A-Z]{18}$`)
+	invoiceNumericTaxIdPattern      = regexp.MustCompile(`^[0-9]{15,20}$`)
+	invoicePersonalIdPattern        = regexp.MustCompile(`^[0-9]{17}[0-9X]$`)
+	mobilePhonePattern              = regexp.MustCompile(`^1[3-9]\d{9}$`)
+	landlinePattern                 = regexp.MustCompile(`^0\d{2,3}-?\d{7,8}(?:-\d{1,6})?$`)
+	invoiceBankAccountPattern       = regexp.MustCompile(`^[0-9]{8,32}$`)
 )
 
 func normalizeInvoiceApplicationInput(input InvoiceApplicationSubmit) InvoiceApplicationSubmit {
@@ -91,15 +114,22 @@ func normalizeInvoiceApplicationInput(input InvoiceApplicationSubmit) InvoiceApp
 			tradeNos = append(tradeNos, tradeNo)
 		}
 	}
+	buyerType := strings.ToLower(strings.TrimSpace(input.BuyerType))
+	if buyerType == "" {
+		buyerType = InvoiceBuyerTypeCompany
+	}
+	bankAccount := strings.NewReplacer(" ", "", "-", "").Replace(input.BankAccount)
 	return InvoiceApplicationSubmit{
-		TradeNo:      strings.TrimSpace(input.TradeNo),
-		TradeNos:     tradeNos,
-		Title:        strings.TrimSpace(input.Title),
-		TaxId:        strings.ToUpper(strings.TrimSpace(input.TaxId)),
-		BuyerAddress: strings.TrimSpace(input.BuyerAddress),
-		BuyerPhone:   strings.TrimSpace(input.BuyerPhone),
-		BankName:     strings.TrimSpace(input.BankName),
-		BankAccount:  strings.TrimSpace(input.BankAccount),
+		TradeNo:        strings.TrimSpace(input.TradeNo),
+		TradeNos:       tradeNos,
+		BuyerType:      buyerType,
+		Title:          strings.TrimSpace(input.Title),
+		TaxId:          strings.ToUpper(strings.TrimSpace(input.TaxId)),
+		BuyerAddress:   strings.TrimSpace(input.BuyerAddress),
+		BuyerPhone:     strings.TrimSpace(input.BuyerPhone),
+		BankName:       strings.TrimSpace(input.BankName),
+		BankAccount:    strings.TrimSpace(bankAccount),
+		RecipientEmail: strings.TrimSpace(input.RecipientEmail),
 	}
 }
 
@@ -127,14 +157,31 @@ func invoiceApplicationTradeNos(input InvoiceApplicationSubmit) []string {
 
 func ValidateInvoiceApplicationInput(input InvoiceApplicationSubmit) error {
 	input = normalizeInvoiceApplicationInput(input)
+	if input.BuyerType != InvoiceBuyerTypeIndividual && input.BuyerType != InvoiceBuyerTypeCompany {
+		return errors.New("请选择有效的购买方类型")
+	}
 	if input.Title == "" {
 		return errors.New("请填写发票抬头全称")
 	}
-	if input.TaxId == "" {
-		return errors.New("请填写统一社会信用代码或纳税人识别号")
+	if utf8.RuneCountInString(input.Title) > 50 {
+		return errors.New("发票抬头不能超过 50 个字符")
 	}
-	if !invoiceTaxIdPattern.MatchString(input.TaxId) {
+	if input.TaxId == "" {
+		return errors.New("请填写身份证号、统一社会信用代码或纳税人识别号")
+	}
+	if input.BuyerType == InvoiceBuyerTypeIndividual && !invoicePersonalIdPattern.MatchString(input.TaxId) {
+		return errors.New("请填写有效的居民身份证号")
+	}
+	if input.BuyerType == InvoiceBuyerTypeCompany &&
+		!invoiceUnifiedCreditCodePattern.MatchString(input.TaxId) &&
+		!invoiceNumericTaxIdPattern.MatchString(input.TaxId) {
 		return errors.New("请填写有效的统一社会信用代码或纳税人识别号")
+	}
+	if utf8.RuneCountInString(input.BuyerAddress) > 255 {
+		return errors.New("购买方地址不能超过 255 个字符")
+	}
+	if utf8.RuneCountInString(input.BuyerPhone) > 64 {
+		return errors.New("购买方电话不能超过 64 个字符")
 	}
 	if input.BuyerPhone != "" {
 		phone := strings.ReplaceAll(input.BuyerPhone, " ", "")
@@ -142,12 +189,31 @@ func ValidateInvoiceApplicationInput(input InvoiceApplicationSubmit) error {
 			return errors.New("请填写有效的手机号或固定电话号码")
 		}
 	}
+	if utf8.RuneCountInString(input.BankName) > 255 {
+		return errors.New("开户银行名称不能超过 255 个字符")
+	}
+	if input.BankAccount != "" && !invoiceBankAccountPattern.MatchString(input.BankAccount) {
+		return errors.New("银行账号应为 8 至 32 位数字")
+	}
+	if input.RecipientEmail == "" {
+		return errors.New("请填写接收发票的邮箱地址")
+	}
+	if len(input.RecipientEmail) > 254 {
+		return errors.New("接收发票邮箱地址不能超过 254 个字符")
+	}
+	address, err := mail.ParseAddress(input.RecipientEmail)
+	if err != nil || address.Address != input.RecipientEmail {
+		return errors.New("请填写有效的接收发票邮箱地址")
+	}
 	return nil
 }
 
 func markInvoicePdfReady(app *InvoiceApplication) {
 	if app != nil {
-		app.HasPdf = app.PdfPath != ""
+		app.HasPdf = app.PdfPath != "" || (app.ExternalInvoiceId > 0 && app.Status == InvoiceStatusCompleted)
+		if app.BuyerType == "" {
+			app.BuyerType = InvoiceBuyerTypeCompany
+		}
 	}
 }
 
@@ -177,12 +243,16 @@ func updateInvoiceApplicationForSubmit(app *InvoiceApplication, input InvoiceApp
 	app.TradeNo = firstTopUp.TradeNo
 	app.Amount = totalAmount
 	app.Money = totalMoney
+	app.BuyerType = input.BuyerType
 	app.Title = input.Title
 	app.TaxId = input.TaxId
 	app.BuyerAddress = input.BuyerAddress
 	app.BuyerPhone = input.BuyerPhone
 	app.BankName = input.BankName
 	app.BankAccount = input.BankAccount
+	app.RecipientEmail = input.RecipientEmail
+	app.ExternalInvoiceId = 0
+	app.ReviewNote = ""
 	app.Status = InvoiceStatusPending
 	app.RejectReason = ""
 	app.PdfPath = ""
@@ -288,6 +358,14 @@ func SubmitInvoiceApplication(userId int, input InvoiceApplicationSubmit) (*Invo
 	if len(tradeNos) == 0 {
 		return nil, errors.New("订单号不能为空")
 	}
+	if len(tradeNos) > MaxInvoiceOrderCount {
+		return nil, errors.New("一次最多申请 20 个订单")
+	}
+	for _, tradeNo := range tradeNos {
+		if len(tradeNo) > 255 {
+			return nil, errors.New("订单号不能超过 255 个字符")
+		}
+	}
 	input.TradeNo = tradeNos[0]
 	if err := ValidateInvoiceApplicationInput(input); err != nil {
 		return nil, err
@@ -309,7 +387,7 @@ func SubmitInvoiceApplication(userId int, input InvoiceApplicationSubmit) (*Invo
 		}
 
 		var existingOrders []InvoiceApplicationOrder
-		if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("trade_no IN ?", tradeNos).Find(&existingOrders).Error; err != nil {
+		if err := lockForUpdate(tx).Where("trade_no IN ?", tradeNos).Find(&existingOrders).Error; err != nil {
 			return err
 		}
 		if len(existingOrders) > 0 {
@@ -319,7 +397,7 @@ func SubmitInvoiceApplication(userId int, input InvoiceApplicationSubmit) (*Invo
 					return errors.New("该订单已提交过开票申请")
 				}
 			}
-			if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("id = ?", appId).First(app).Error; err != nil {
+			if err := lockForUpdate(tx).Where("id = ?", appId).First(app).Error; err != nil {
 				return err
 			}
 			if app.UserId != userId {
@@ -327,6 +405,9 @@ func SubmitInvoiceApplication(userId int, input InvoiceApplicationSubmit) (*Invo
 			}
 			if app.Status != InvoiceStatusRejected {
 				return errors.New("该订单已提交过开票申请")
+			}
+			if app.ExternalInvoiceId > 0 {
+				return errors.New("已提交到开票平台的申请不能重新提交")
 			}
 
 			now := common.GetTimestamp()
@@ -338,7 +419,7 @@ func SubmitInvoiceApplication(userId int, input InvoiceApplicationSubmit) (*Invo
 		}
 
 		var legacyApps []InvoiceApplication
-		if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("trade_no IN ?", tradeNos).Find(&legacyApps).Error; err != nil {
+		if err := lockForUpdate(tx).Where("trade_no IN ?", tradeNos).Find(&legacyApps).Error; err != nil {
 			return err
 		}
 		if len(legacyApps) > 0 {
@@ -348,6 +429,9 @@ func SubmitInvoiceApplication(userId int, input InvoiceApplicationSubmit) (*Invo
 			*app = legacyApps[0]
 			if app.UserId != userId || app.Status != InvoiceStatusRejected {
 				return errors.New("该订单已提交过开票申请")
+			}
+			if app.ExternalInvoiceId > 0 {
+				return errors.New("已提交到开票平台的申请不能重新提交")
 			}
 
 			now := common.GetTimestamp()
@@ -360,16 +444,18 @@ func SubmitInvoiceApplication(userId int, input InvoiceApplicationSubmit) (*Invo
 
 		now := common.GetTimestamp()
 		*app = InvoiceApplication{
-			UserId:       userId,
-			Title:        input.Title,
-			TaxId:        input.TaxId,
-			BuyerAddress: input.BuyerAddress,
-			BuyerPhone:   input.BuyerPhone,
-			BankName:     input.BankName,
-			BankAccount:  input.BankAccount,
-			Status:       InvoiceStatusPending,
-			CreatedAt:    now,
-			UpdatedAt:    now,
+			UserId:         userId,
+			BuyerType:      input.BuyerType,
+			Title:          input.Title,
+			TaxId:          input.TaxId,
+			BuyerAddress:   input.BuyerAddress,
+			BuyerPhone:     input.BuyerPhone,
+			BankName:       input.BankName,
+			BankAccount:    input.BankAccount,
+			RecipientEmail: input.RecipientEmail,
+			Status:         InvoiceStatusPending,
+			CreatedAt:      now,
+			UpdatedAt:      now,
 		}
 		updateInvoiceApplicationForSubmit(app, input, topUps, tradeNos, now)
 		if err := tx.Create(app).Error; err != nil {
@@ -453,6 +539,7 @@ func GetUserInvoiceTopUpRecords(userId int, pageInfo *common.PageInfo, keyword s
 		if app, ok := invoiceByTradeNo[topUp.TradeNo]; ok {
 			record.InvoiceApplied = true
 			record.InvoiceApplicationId = app.Id
+			record.ExternalInvoiceId = app.ExternalInvoiceId
 			record.InvoiceStatus = app.Status
 		}
 		records = append(records, record)
@@ -606,9 +693,169 @@ func GetAllInvoiceApplications(pageInfo *common.PageInfo, options InvoiceApplica
 func GetPendingInvoiceApplicationCount() (int64, error) {
 	var count int64
 	err := DB.Model(&InvoiceApplication{}).
-		Where("status = ?", InvoiceStatusPending).
+		Where("status = ? AND external_invoice_id = ?", InvoiceStatusPending, 0).
 		Count(&count).Error
 	return count, err
+}
+
+// BindExternalInvoiceApplication records the application created by the
+// configured invoice provider. The provider is the source of truth for its
+// status; this row is kept as a local index for user/admin views and PDF
+// proxying.
+func BindExternalInvoiceApplication(id int, externalInvoiceId int64, status string, reviewNote string) (*InvoiceApplication, error) {
+	if id <= 0 || externalInvoiceId <= 0 {
+		return nil, errors.New("开票平台申请编号无效")
+	}
+	var err error
+	status, err = normalizeInvoiceStatus(status)
+	if err != nil {
+		return nil, err
+	}
+	app := &InvoiceApplication{}
+	err = DB.Transaction(func(tx *gorm.DB) error {
+		if err := lockForUpdate(tx).Where("id = ?", id).First(app).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errors.New("开票申请不存在")
+			}
+			return err
+		}
+		if app.ExternalInvoiceId != 0 && app.ExternalInvoiceId != externalInvoiceId {
+			return errors.New("开票申请已绑定其他平台申请")
+		}
+		if app.ExternalInvoiceId == 0 && app.Status != InvoiceStatusPending {
+			return errors.New("开票申请状态已变更，不能绑定开票平台申请")
+		}
+		app.ExternalInvoiceId = externalInvoiceId
+		app.Status = status
+		app.ReviewNote = strings.TrimSpace(reviewNote)
+		if status == InvoiceStatusRejected {
+			app.RejectReason = app.ReviewNote
+		} else if status != InvoiceStatusRejected {
+			app.RejectReason = ""
+		}
+		app.UpdatedAt = common.GetTimestamp()
+		if status == InvoiceStatusApproved || status == InvoiceStatusRejected || status == InvoiceStatusCompleted {
+			app.HandledAt = app.UpdatedAt
+		}
+		return tx.Save(app).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	markInvoicePdfReady(app)
+	if err := attachInvoiceOrders([]*InvoiceApplication{app}); err != nil {
+		return nil, err
+	}
+	return app, nil
+}
+
+// SyncExternalInvoiceApplication updates the cached provider status. It is
+// intentionally narrow so a stale provider response cannot change ownership
+// or invoice fields submitted by the user.
+func SyncExternalInvoiceApplication(id int, status string, reviewNote string, hasPdf bool) (*InvoiceApplication, error) {
+	if id <= 0 {
+		return nil, errors.New("开票申请不存在")
+	}
+	var err error
+	status, err = normalizeInvoiceStatus(status)
+	if err != nil {
+		return nil, err
+	}
+	app := &InvoiceApplication{}
+	err = DB.Transaction(func(tx *gorm.DB) error {
+		if err := lockForUpdate(tx).Where("id = ? AND external_invoice_id > 0", id).First(app).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errors.New("开票申请不存在")
+			}
+			return err
+		}
+		if !canTransitionExternalInvoiceStatus(app.Status, status) {
+			return fmt.Errorf("%w: %s -> %s", ErrInvoiceStatusRegression, app.Status, status)
+		}
+		if app.Status != status || app.ReviewNote != strings.TrimSpace(reviewNote) {
+			app.Status = status
+			app.ReviewNote = strings.TrimSpace(reviewNote)
+			if status == InvoiceStatusRejected {
+				app.RejectReason = app.ReviewNote
+			} else if status != InvoiceStatusRejected {
+				app.RejectReason = ""
+			}
+			app.UpdatedAt = common.GetTimestamp()
+			if status == InvoiceStatusApproved || status == InvoiceStatusRejected || status == InvoiceStatusCompleted {
+				if app.HandledAt == 0 {
+					app.HandledAt = app.UpdatedAt
+				}
+			}
+			if err := tx.Save(app).Error; err != nil {
+				return err
+			}
+		}
+		if hasPdf && app.Status == InvoiceStatusCompleted {
+			// Status is enough to authorize the provider PDF endpoint. Keep this
+			// branch to make the provider's explicit hasPdf signal observable in
+			// callers without persisting another dialect-sensitive boolean.
+			app.HasPdf = true
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	markInvoicePdfReady(app)
+	return app, nil
+}
+
+func MarkInvoiceApplicationSubmissionFailed(id int, reason string) error {
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		reason = "开票平台提交失败，请稍后重试"
+	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		app := &InvoiceApplication{}
+		if err := lockForUpdate(tx).Where("id = ?", id).First(app).Error; err != nil {
+			return err
+		}
+		if app.ExternalInvoiceId > 0 {
+			return nil
+		}
+		if app.Status != InvoiceStatusPending {
+			return nil
+		}
+		app.Status = InvoiceStatusRejected
+		app.RejectReason = reason
+		app.ReviewNote = reason
+		app.UpdatedAt = common.GetTimestamp()
+		return tx.Save(app).Error
+	})
+}
+
+func normalizeInvoiceStatus(status string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case InvoiceStatusPending:
+		return InvoiceStatusPending, nil
+	case InvoiceStatusApproved:
+		return InvoiceStatusApproved, nil
+	case InvoiceStatusRejected:
+		return InvoiceStatusRejected, nil
+	case InvoiceStatusCompleted:
+		return InvoiceStatusCompleted, nil
+	default:
+		return "", ErrUnknownInvoiceStatus
+	}
+}
+
+func canTransitionExternalInvoiceStatus(current string, next string) bool {
+	if current == next {
+		return true
+	}
+	switch current {
+	case InvoiceStatusPending:
+		return true
+	case InvoiceStatusApproved:
+		return next == InvoiceStatusCompleted
+	default:
+		return false
+	}
 }
 
 func GetInvoiceApplicationById(id int) (*InvoiceApplication, error) {
@@ -654,13 +901,16 @@ func CancelUserInvoiceApplication(userId int, id int) error {
 
 	return DB.Transaction(func(tx *gorm.DB) error {
 		app := &InvoiceApplication{}
-		if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("id = ? AND user_id = ?", id, userId).First(app).Error; err != nil {
+		if err := lockForUpdate(tx).Where("id = ? AND user_id = ?", id, userId).First(app).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return errors.New("开票申请不存在")
 			}
 			return err
 		}
-		if app.Status == InvoiceStatusApproved {
+		if app.ExternalInvoiceId > 0 {
+			return errors.New("已提交到开票平台的申请不能撤销")
+		}
+		if app.Status == InvoiceStatusApproved || app.Status == InvoiceStatusCompleted {
 			return errors.New("已通过的开票申请不能撤销")
 		}
 		if err := tx.Where("invoice_application_id = ?", app.Id).Delete(&InvoiceApplicationOrder{}).Error; err != nil {
@@ -677,11 +927,14 @@ func DeleteInvoiceApplicationByAdmin(id int) (*InvoiceApplication, error) {
 
 	app := &InvoiceApplication{}
 	err := DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("id = ?", id).First(app).Error; err != nil {
+		if err := lockForUpdate(tx).Where("id = ?", id).First(app).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return errors.New("开票申请不存在")
 			}
 			return err
+		}
+		if app.ExternalInvoiceId > 0 {
+			return errors.New("已提交到开票平台的申请不能删除")
 		}
 		if err := tx.Where("invoice_application_id = ?", app.Id).Delete(&InvoiceApplicationOrder{}).Error; err != nil {
 			return err
@@ -700,7 +953,7 @@ func ApproveInvoiceApplication(id int, adminId int, pdfFileName string, pdfPath 
 	}
 	app := &InvoiceApplication{}
 	err := DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("id = ?", id).First(app).Error; err != nil {
+		if err := lockForUpdate(tx).Where("id = ?", id).First(app).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return errors.New("开票申请不存在")
 			}
@@ -708,6 +961,9 @@ func ApproveInvoiceApplication(id int, adminId int, pdfFileName string, pdfPath 
 		}
 		if app.Status != InvoiceStatusPending {
 			return errors.New("只能处理待审核的开票申请")
+		}
+		if app.ExternalInvoiceId > 0 {
+			return errors.New("该申请由开票平台处理，不能手动审核")
 		}
 
 		now := common.GetTimestamp()
@@ -738,7 +994,7 @@ func RejectInvoiceApplication(id int, adminId int, reason string) (*InvoiceAppli
 
 	app := &InvoiceApplication{}
 	err := DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("id = ?", id).First(app).Error; err != nil {
+		if err := lockForUpdate(tx).Where("id = ?", id).First(app).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return errors.New("开票申请不存在")
 			}
@@ -746,6 +1002,9 @@ func RejectInvoiceApplication(id int, adminId int, reason string) (*InvoiceAppli
 		}
 		if app.Status != InvoiceStatusPending {
 			return errors.New("只能处理待审核的开票申请")
+		}
+		if app.ExternalInvoiceId > 0 {
+			return errors.New("该申请由开票平台处理，不能手动审核")
 		}
 
 		now := common.GetTimestamp()
