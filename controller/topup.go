@@ -502,3 +502,29 @@ func AdminCompleteTopUp(c *gin.Context) {
 	}
 	common.ApiSuccess(c, nil)
 }
+
+// AdminDeleteTopUp permanently deletes a failed or expired top-up order.
+func AdminDeleteTopUp(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil || id <= 0 {
+		common.ApiErrorMsg(c, "参数错误")
+		return
+	}
+
+	topUp := model.GetTopUpById(id)
+	if topUp == nil {
+		common.ApiError(c, model.ErrTopUpNotFound)
+		return
+	}
+
+	// Serialize with payment callbacks in this process; the model transaction
+	// performs the database-level lock and rechecks the current status.
+	LockOrder(topUp.TradeNo)
+	defer UnlockOrder(topUp.TradeNo)
+
+	if err := model.DeleteTopUpByID(id); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, nil)
+}

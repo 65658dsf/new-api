@@ -107,6 +107,7 @@ var (
 	ErrPaymentMethodMismatch = errors.New("payment method mismatch")
 	ErrTopUpNotFound         = errors.New("topup not found")
 	ErrTopUpStatusInvalid    = errors.New("topup status invalid")
+	ErrTopUpDeleteNotAllowed = errors.New("only failed or expired topup orders can be deleted")
 )
 
 type inviterPercentageReward struct {
@@ -224,6 +225,28 @@ func GetTopUpById(id int) *TopUp {
 		return nil
 	}
 	return topUp
+}
+
+// DeleteTopUpByID permanently removes a terminal unpaid top-up order.
+// Pending and successful orders must remain available for payment callbacks and accounting.
+func DeleteTopUpByID(id int) error {
+	if id <= 0 {
+		return errors.New("invalid topup id")
+	}
+
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var topUp TopUp
+		if err := lockForUpdate(tx).Where("id = ?", id).First(&topUp).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrTopUpNotFound
+			}
+			return err
+		}
+		if topUp.Status != common.TopUpStatusFailed && topUp.Status != common.TopUpStatusExpired {
+			return ErrTopUpDeleteNotAllowed
+		}
+		return tx.Delete(&topUp).Error
+	})
 }
 
 func GetTopUpByTradeNo(tradeNo string) *TopUp {

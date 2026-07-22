@@ -342,6 +342,7 @@ export const STATIC_I18N_KEYS = [
   'This will manually mark the order as paid and credit the user account. Continue only after verifying the payment externally.',
   'Confirm Completion',
   'Complete Order',
+  'Deleted a top-up order',
 
   // Upstream model updates
   'Upstream Model Updates',

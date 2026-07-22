@@ -136,6 +136,7 @@ func SetApiRouter(router *gin.Engine) {
 				adminRoute.GET("/topup/overview", controller.GetTopUpOverview)
 				adminRoute.GET("/topup", controller.GetAllTopUps)
 				adminRoute.POST("/topup/complete", controller.AdminCompleteTopUp)
+				adminRoute.DELETE("/topup/:id", controller.AdminDeleteTopUp)
 				adminRoute.GET("/invoices/admin", controller.GetAllInvoiceApplications)
 				adminRoute.GET("/invoices/admin/pending-count", controller.GetAdminInvoicePendingCount)
 				adminRoute.POST("/invoices/:id/approve", controller.AdminApproveInvoiceApplication)

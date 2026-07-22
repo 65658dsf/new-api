@@ -16,8 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useCallback, useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ColumnDef, PaginationState } from '@tanstack/react-table'
 import {
   CircleCheckBig,
@@ -26,13 +25,17 @@ import {
   Eye,
   Search,
   RefreshCcw,
+  Trash2,
   UserRound,
 } from 'lucide-react'
+import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { DataTablePage, useDataTable } from '@/components/data-table'
 import { Dialog } from '@/components/dialog'
+import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -43,23 +46,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { StatusBadge } from '@/components/status-badge'
 import { formatBillingCurrencyFromUSD } from '@/lib/currency'
 import { formatTimestampToDate } from '@/lib/format'
-import { completeTopUpOrder, getTopUpOrders } from '../../api'
-import type {
-  TopUpOrdersQuery,
-  TopUpRecord,
-  TopUpStatus,
-} from '../../types'
 
-const STATUS_OPTIONS: Array<{ value: 'all' | TopUpStatus; labelKey: string }> = [
-  { value: 'all', labelKey: 'All Status' },
-  { value: 'success', labelKey: 'Success' },
-  { value: 'pending', labelKey: 'Pending' },
-  { value: 'failed', labelKey: 'Failed' },
-  { value: 'expired', labelKey: 'Expired' },
-]
+import { completeTopUpOrder, deleteTopUpOrder, getTopUpOrders } from '../../api'
+import type { TopUpOrdersQuery, TopUpRecord, TopUpStatus } from '../../types'
+
+const STATUS_OPTIONS: Array<{ value: 'all' | TopUpStatus; labelKey: string }> =
+  [
+    { value: 'all', labelKey: 'All Status' },
+    { value: 'success', labelKey: 'Success' },
+    { value: 'pending', labelKey: 'Pending' },
+    { value: 'failed', labelKey: 'Failed' },
+    { value: 'expired', labelKey: 'Expired' },
+  ]
 
 const PAYMENT_METHOD_OPTIONS = [
   { value: 'all', labelKey: 'All Payment Methods' },
@@ -286,12 +286,16 @@ function InfoItem(props: { label: string; value: React.ReactNode }) {
 
 export function PaymentOrders() {
   const { t } = useTranslation()
+  const queryClient = useQueryClient()
   const [keyword, setKeyword] = useState('')
   const [status, setStatus] = useState<'all' | TopUpStatus>('all')
   const [paymentMethod, setPaymentMethod] = useState<'all' | string>('all')
   const [selectedOrder, setSelectedOrder] = useState<TopUpRecord | null>(null)
   const [confirmOrder, setConfirmOrder] = useState<TopUpRecord | null>(null)
-  const [completingTradeNo, setCompletingTradeNo] = useState<string | null>(null)
+  const [deletingOrder, setDeletingOrder] = useState<TopUpRecord | null>(null)
+  const [completingTradeNo, setCompletingTradeNo] = useState<string | null>(
+    null
+  )
   const [pagination, setPagination] = useState<PaginationState>({
     pageIndex: 0,
     pageSize: 20,
@@ -323,6 +327,25 @@ export function PaymentOrders() {
 
   const rows = ordersQuery.data?.items ?? []
   const total = ordersQuery.data?.total ?? 0
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteTopUpOrder,
+    onSuccess: async (result, id) => {
+      if (!result.success) {
+        toast.error(result.message || t('Failed to delete order'))
+        return
+      }
+      toast.success(t('Order deleted successfully'))
+      setDeletingOrder(null)
+      setSelectedOrder((order) => (order?.id === id ? null : order))
+      await queryClient.invalidateQueries({
+        queryKey: ['dashboard', 'payment-orders'],
+      })
+    },
+    onError: () => {
+      toast.error(t('Failed to delete order'))
+    },
+  })
 
   const columns = useMemo<ColumnDef<TopUpRecord>[]>(
     () => [
@@ -407,9 +430,22 @@ export function PaymentOrders() {
                 {t('Complete Order')}
               </Button>
             ) : null}
+            {row.original.status === 'failed' ||
+            row.original.status === 'expired' ? (
+              <Button
+                variant='ghost'
+                size='icon-sm'
+                className='text-destructive hover:text-destructive'
+                onClick={() => setDeletingOrder(row.original)}
+                aria-label={t('Delete Order')}
+                title={t('Delete Order')}
+              >
+                <Trash2 aria-hidden='true' />
+              </Button>
+            ) : null}
           </div>
         ),
-        size: 180,
+        size: 240,
         meta: { pinned: 'right' as const },
       },
     ],
@@ -562,6 +598,26 @@ export function PaymentOrders() {
         disabled={Boolean(completingTradeNo)}
         isLoading={Boolean(completingTradeNo)}
         handleConfirm={handleConfirmComplete}
+      />
+
+      <ConfirmDialog
+        open={Boolean(deletingOrder)}
+        onOpenChange={(open) => {
+          if (!open && !deleteMutation.isPending) setDeletingOrder(null)
+        }}
+        title={t('Delete Order')}
+        desc={t(
+          'Are you sure you want to delete order "{{tradeNo}}"? This action cannot be undone.',
+          { tradeNo: deletingOrder?.trade_no }
+        )}
+        confirmText={deleteMutation.isPending ? t('Deleting...') : t('Delete')}
+        destructive
+        disabled={deleteMutation.isPending}
+        isLoading={deleteMutation.isPending}
+        handleConfirm={() => {
+          if (!deletingOrder || deleteMutation.isPending) return
+          deleteMutation.mutate(deletingOrder.id)
+        }}
       />
     </>
   )

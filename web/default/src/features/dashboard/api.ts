@@ -138,3 +138,12 @@ export async function completeTopUpOrder(
   )
   return res.data
 }
+
+export async function deleteTopUpOrder(
+  id: number
+): Promise<DashboardApiResponse> {
+  const res = await api.delete<DashboardApiResponse>(`/api/user/topup/${id}`, {
+    skipBusinessError: true,
+  })
+  return res.data
+}
