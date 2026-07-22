@@ -442,15 +442,74 @@ func HardDeleteUserById(id int) error {
 	})
 }
 
-func inviteUser(inviterId int) (err error) {
-	user, err := GetUserById(inviterId, true)
-	if err != nil {
-		return err
+func inviteUser(inviterId int, rewardQuota int) (int, error) {
+	if rewardQuota < 0 {
+		return 0, errors.New("邀请奖励额度不能为负数")
 	}
-	user.AffCount++
-	user.AffQuota += common.QuotaForInviter
-	user.AffHistoryQuota += common.QuotaForInviter
-	return DB.Save(user).Error
+
+	grantedQuota := 0
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var inviter User
+		if err := lockForUpdate(tx).
+			Select("id", "aff_count", "aff_quota", "aff_history").
+			Where("id = ?", inviterId).
+			First(&inviter).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+
+		nextAffCount := inviter.AffCount
+		if nextAffCount < common.MaxQuota {
+			nextAffCount++
+		}
+		nextAffQuota := inviter.AffQuota
+		nextAffHistory := inviter.AffHistoryQuota
+		if rewardQuota > 0 {
+			nextAffQuota, _ = common.QuotaFromFloatChecked(float64(inviter.AffQuota) + float64(rewardQuota))
+			grantedQuota = nextAffQuota - inviter.AffQuota
+			if grantedQuota > 0 {
+				nextAffHistory, _ = common.QuotaFromFloatChecked(float64(inviter.AffHistoryQuota) + float64(grantedQuota))
+			}
+		}
+
+		return tx.Model(&User{}).Where("id = ?", inviter.Id).Updates(map[string]interface{}{
+			"aff_count":   nextAffCount,
+			"aff_quota":   nextAffQuota,
+			"aff_history": nextAffHistory,
+		}).Error
+	})
+	return grantedQuota, err
+}
+
+func finishInvitationRewards(userId int, inviterId int) {
+	if inviterId == 0 || !operation_setting.IsPaymentComplianceConfirmed() {
+		return
+	}
+
+	if common.QuotaForInvitee > 0 {
+		_ = IncreaseUserQuota(userId, common.QuotaForInvitee, true)
+		RecordLog(userId, LogTypeSystem, fmt.Sprintf("使用邀请码赠送 %s", logger.LogQuota(common.QuotaForInvitee)))
+	}
+
+	rewardMode := operation_setting.GetInviterRewardSetting().Mode
+	fixedReward := 0
+	if rewardMode == operation_setting.InviterRewardModeFixed {
+		fixedReward = common.QuotaForInviter
+	}
+	if rewardMode != operation_setting.InviterRewardModePercentage && fixedReward <= 0 {
+		return
+	}
+
+	grantedQuota, err := inviteUser(inviterId, fixedReward)
+	if err != nil {
+		common.SysError(fmt.Sprintf("更新邀请奖励失败: inviter_id=%d, error=%v", inviterId, err))
+		return
+	}
+	if grantedQuota > 0 {
+		RecordLog(inviterId, LogTypeSystem, fmt.Sprintf("邀请用户赠送 %s", logger.LogQuota(grantedQuota)))
+	}
 }
 
 func (user *User) TransferAffQuotaToQuota(quota int) error {
@@ -549,6 +608,7 @@ func (user *User) Insert(inviterId int) error {
 			}
 			user.Quota = common.QuotaForNewUser
 			user.AffCode = common.GetRandomString(4)
+			user.InviterId = inviterId
 
 			// 初始化用户设置，包括默认的边栏配置
 			if user.Setting == "" {
@@ -586,17 +646,7 @@ func (user *User) finishInsert(inviterId int) {
 	if common.QuotaForNewUser > 0 {
 		RecordLog(user.Id, LogTypeSystem, fmt.Sprintf("新用户注册赠送 %s", logger.LogQuota(common.QuotaForNewUser)))
 	}
-	if inviterId != 0 && operation_setting.IsPaymentComplianceConfirmed() {
-		if common.QuotaForInvitee > 0 {
-			_ = IncreaseUserQuota(user.Id, common.QuotaForInvitee, true)
-			RecordLog(user.Id, LogTypeSystem, fmt.Sprintf("使用邀请码赠送 %s", logger.LogQuota(common.QuotaForInvitee)))
-		}
-		if common.QuotaForInviter > 0 {
-			//_ = IncreaseUserQuota(inviterId, common.QuotaForInviter)
-			RecordLog(inviterId, LogTypeSystem, fmt.Sprintf("邀请用户赠送 %s", logger.LogQuota(common.QuotaForInviter)))
-			_ = inviteUser(inviterId)
-		}
-	}
+	finishInvitationRewards(user.Id, inviterId)
 }
 
 func (user *User) FinishInsert(inviterId int) {
@@ -613,6 +663,7 @@ func (user *User) InsertWithTx(tx *gorm.DB, inviterId int) error {
 		}
 		user.Quota = common.QuotaForNewUser
 		user.AffCode = common.GetRandomString(4)
+		user.InviterId = inviterId
 
 		// 初始化用户设置
 		if user.Setting == "" {
@@ -643,16 +694,7 @@ func (user *User) FinalizeOAuthUserCreation(inviterId int) {
 	if common.QuotaForNewUser > 0 {
 		RecordLog(user.Id, LogTypeSystem, fmt.Sprintf("新用户注册赠送 %s", logger.LogQuota(common.QuotaForNewUser)))
 	}
-	if inviterId != 0 && operation_setting.IsPaymentComplianceConfirmed() {
-		if common.QuotaForInvitee > 0 {
-			_ = IncreaseUserQuota(user.Id, common.QuotaForInvitee, true)
-			RecordLog(user.Id, LogTypeSystem, fmt.Sprintf("使用邀请码赠送 %s", logger.LogQuota(common.QuotaForInvitee)))
-		}
-		if common.QuotaForInviter > 0 {
-			RecordLog(inviterId, LogTypeSystem, fmt.Sprintf("邀请用户赠送 %s", logger.LogQuota(common.QuotaForInviter)))
-			_ = inviteUser(inviterId)
-		}
-	}
+	finishInvitationRewards(user.Id, inviterId)
 }
 
 func (user *User) Update(updatePassword bool) error {

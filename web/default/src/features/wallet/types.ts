@@ -156,6 +156,10 @@ export interface TopupInfo {
   payment_compliance_confirmed?: boolean
   /** Current compliance terms version */
   payment_compliance_terms_version?: string
+  /** How inviter rewards are calculated */
+  inviter_reward_mode?: 'fixed' | 'percentage'
+  /** Extra reward percentage based on credited top-up quota */
+  inviter_reward_percentage?: number
 }
 
 /**

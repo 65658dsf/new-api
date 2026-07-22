@@ -52,32 +52,63 @@ const getGroupDefaults = (settings: BillingSettings) => ({
     settings['group_ratio_setting.group_special_usable_group'],
 })
 
+function parseInviterRewardSetting(value: string): {
+  mode: 'fixed' | 'percentage'
+  percentage: number
+} {
+  try {
+    const parsed: unknown = JSON.parse(value)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { mode: 'fixed', percentage: 0 }
+    }
+    const reward = parsed as Record<string, unknown>
+    const mode = reward.mode === 'percentage' ? 'percentage' : 'fixed'
+    const percentage = Number(reward.percentage)
+    return {
+      mode,
+      percentage:
+        Number.isFinite(percentage) && percentage >= 0 && percentage <= 100
+          ? percentage
+          : 0,
+    }
+  } catch {
+    return { mode: 'fixed', percentage: 0 }
+  }
+}
+
 const BILLING_SECTIONS = [
   {
     id: 'quota',
     titleKey: 'Quota Settings',
-    build: (settings: BillingSettings) => (
-      <QuotaSettingsSection
-        defaultValues={{
-          QuotaForNewUser: settings.QuotaForNewUser,
-          PreConsumedQuota: settings.PreConsumedQuota,
-          QuotaForInviter: settings.QuotaForInviter,
-          QuotaForInvitee: settings.QuotaForInvitee,
-          TopUpLink: settings.TopUpLink,
-          general_setting: {
-            docs_link: settings['general_setting.docs_link'],
-          },
-          quota_setting: {
-            enable_free_model_pre_consume:
-              settings['quota_setting.enable_free_model_pre_consume'],
-          },
-        }}
-        complianceConfirmed={
-          (settings['payment_setting.compliance_confirmed'] ?? false) &&
-          settings['payment_setting.compliance_terms_version'] === 'v1'
-        }
-      />
-    ),
+    build: (settings: BillingSettings) => {
+      const inviterReward = parseInviterRewardSetting(
+        settings['quota_setting.inviter_reward']
+      )
+      return (
+        <QuotaSettingsSection
+          defaultValues={{
+            QuotaForNewUser: settings.QuotaForNewUser,
+            PreConsumedQuota: settings.PreConsumedQuota,
+            QuotaForInviter: settings.QuotaForInviter,
+            QuotaForInvitee: settings.QuotaForInvitee,
+            TopUpLink: settings.TopUpLink,
+            general_setting: {
+              docs_link: settings['general_setting.docs_link'],
+            },
+            quota_setting: {
+              enable_free_model_pre_consume:
+                settings['quota_setting.enable_free_model_pre_consume'],
+              inviter_reward_mode: inviterReward.mode,
+              inviter_reward_percentage: inviterReward.percentage,
+            },
+          }}
+          complianceConfirmed={
+            (settings['payment_setting.compliance_confirmed'] ?? false) &&
+            settings['payment_setting.compliance_terms_version'] === 'v1'
+          }
+        />
+      )
+    },
   },
   {
     id: 'currency',

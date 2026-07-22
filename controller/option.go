@@ -143,6 +143,29 @@ func UpdateOption(c *gin.Context) {
 			common.ApiErrorI18n(c, i18n.MsgPaymentComplianceRequired)
 			return
 		}
+	case "quota_setting.inviter_reward":
+		var reward operation_setting.InviterRewardSetting
+		if err := common.UnmarshalJsonStr(option.Value.(string), &reward); err != nil ||
+			!operation_setting.IsValidInviterRewardMode(reward.Mode) ||
+			!operation_setting.IsValidInviterRewardPercentage(reward.Percentage) {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"success": false,
+				"message": "邀请奖励配置无效",
+			})
+			return
+		}
+		if reward.Mode == operation_setting.InviterRewardModePercentage &&
+			reward.Percentage > 0 &&
+			!operation_setting.IsPaymentComplianceConfirmed() {
+			common.ApiErrorI18n(c, i18n.MsgPaymentComplianceRequired)
+			return
+		}
+		canonical, marshalErr := common.Marshal(reward)
+		if marshalErr != nil {
+			common.ApiErrorMsg(c, "邀请奖励配置序列化失败")
+			return
+		}
+		option.Value = string(canonical)
 	default:
 		if isPaymentComplianceOptionKey(option.Key) {
 			common.ApiErrorMsg(c, "合规确认字段不允许通过通用设置接口修改")

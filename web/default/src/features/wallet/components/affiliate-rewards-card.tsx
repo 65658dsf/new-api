@@ -34,6 +34,8 @@ interface AffiliateRewardsCardProps {
   affiliateLink: string
   onTransfer: () => void
   complianceConfirmed?: boolean
+  rewardMode?: 'fixed' | 'percentage'
+  rewardPercentage?: number
   loading?: boolean
 }
 
@@ -42,6 +44,8 @@ export function AffiliateRewardsCard({
   affiliateLink,
   onTransfer,
   complianceConfirmed = true,
+  rewardMode,
+  rewardPercentage = 0,
   loading,
 }: AffiliateRewardsCardProps) {
   const { t } = useTranslation()
@@ -61,6 +65,19 @@ export function AffiliateRewardsCard({
   }
 
   const hasRewards = (user?.aff_quota ?? 0) > 0
+  let rewardDescription = t(
+    'Earn rewards from users you invite. Transfer accumulated rewards to your balance anytime.'
+  )
+  if (rewardMode === 'fixed') {
+    rewardDescription = t(
+      'Earn rewards when users join through your referral link. Transfer accumulated rewards to your balance anytime.'
+    )
+  } else if (rewardMode === 'percentage') {
+    rewardDescription = t(
+      'Earn an extra {{percentage}}% of the credited quota from each completed top-up by users you invite.',
+      { percentage: rewardPercentage }
+    )
+  }
 
   return (
     <Card data-card-hover='false' className='bg-muted/20 py-0'>
@@ -73,10 +90,8 @@ export function AffiliateRewardsCard({
             <h3 className='truncate text-sm font-semibold'>
               {t('Referral Program')}
             </h3>
-            <p className='text-muted-foreground line-clamp-1 text-xs'>
-              {t(
-                'Earn rewards when users join through your referral link. Transfer accumulated rewards to your balance anytime.'
-              )}
+            <p className='text-muted-foreground line-clamp-2 text-xs'>
+              {rewardDescription}
             </p>
           </div>
         </div>

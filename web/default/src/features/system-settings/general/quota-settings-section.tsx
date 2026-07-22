@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
 import type { ChangeEvent } from 'react'
-import type { Resolver } from 'react-hook-form'
+import { useWatch, type Resolver } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import * as z from 'zod'
 
@@ -33,7 +33,13 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+} from '@/components/ui/input-group'
 import { Switch } from '@/components/ui/switch'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { formatQuota } from '@/lib/format'
 
 import { FormDirtyIndicator } from '../components/form-dirty-indicator'
@@ -50,21 +56,27 @@ import { SettingsSection } from '../components/settings-section'
 import { useSettingsForm } from '../hooks/use-settings-form'
 import { useUpdateOption } from '../hooks/use-update-option'
 
-const quotaSchema = z.object({
-  QuotaForNewUser: z.coerce.number().min(0),
-  PreConsumedQuota: z.coerce.number().min(0),
-  QuotaForInviter: z.coerce.number().min(0),
-  QuotaForInvitee: z.coerce.number().min(0),
-  TopUpLink: z.string(),
-  general_setting: z.object({
-    docs_link: z.string(),
-  }),
-  quota_setting: z.object({
-    enable_free_model_pre_consume: z.boolean(),
-  }),
-})
+const createQuotaSchema = (t: (key: string) => string) =>
+  z.object({
+    QuotaForNewUser: z.coerce.number().min(0),
+    PreConsumedQuota: z.coerce.number().min(0),
+    QuotaForInviter: z.coerce.number().min(0, t('Value must be 0 or greater')),
+    QuotaForInvitee: z.coerce.number().min(0),
+    TopUpLink: z.string(),
+    general_setting: z.object({
+      docs_link: z.string(),
+    }),
+    quota_setting: z.object({
+      enable_free_model_pre_consume: z.boolean(),
+      inviter_reward_mode: z.enum(['fixed', 'percentage']),
+      inviter_reward_percentage: z.coerce
+        .number()
+        .min(0, t('Percentage must be between 0 and 100'))
+        .max(100, t('Percentage must be between 0 and 100')),
+    }),
+  })
 
-type QuotaFormValues = z.infer<typeof quotaSchema>
+type QuotaFormValues = z.infer<ReturnType<typeof createQuotaSchema>>
 type QuotaInputValue = number | ''
 
 function formatQuotaInputValue(value: QuotaInputValue): string {
@@ -82,6 +94,7 @@ export function QuotaSettingsSection({
 }: QuotaSettingsSectionProps) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
+  const quotaSchema = createQuotaSchema(t)
   const handleNumberChange =
     (onChange: (value: QuotaInputValue) => void) =>
     (event: ChangeEvent<HTMLInputElement>) => {
@@ -97,8 +110,41 @@ export function QuotaSettingsSection({
         QuotaFormValues
       >,
       defaultValues,
-      onSubmit: async (_data, changedFields) => {
-        for (const [key, value] of Object.entries(changedFields)) {
+      onSubmit: async (data, changedFields) => {
+        const rewardModeKey = 'quota_setting.inviter_reward_mode'
+        const rewardPercentageKey = 'quota_setting.inviter_reward_percentage'
+        const rewardChanged =
+          rewardModeKey in changedFields || rewardPercentageKey in changedFields
+        const changedEntries = Object.entries(changedFields).filter(
+          ([key]) => key !== rewardModeKey && key !== rewardPercentageKey
+        )
+
+        const fixedRewardIndex = changedEntries.findIndex(
+          ([key]) => key === 'QuotaForInviter'
+        )
+        if (
+          rewardChanged &&
+          data.quota_setting.inviter_reward_mode === 'fixed' &&
+          fixedRewardIndex >= 0
+        ) {
+          const [fixedReward] = changedEntries.splice(fixedRewardIndex, 1)
+          await updateOption.mutateAsync({
+            key: fixedReward[0],
+            value: fixedReward[1] as number,
+          })
+        }
+
+        if (rewardChanged) {
+          await updateOption.mutateAsync({
+            key: 'quota_setting.inviter_reward',
+            value: JSON.stringify({
+              mode: data.quota_setting.inviter_reward_mode,
+              percentage: data.quota_setting.inviter_reward_percentage,
+            }),
+          })
+        }
+
+        for (const [key, value] of changedEntries) {
           await updateOption.mutateAsync({
             key,
             value: value as string | number | boolean,
@@ -106,6 +152,10 @@ export function QuotaSettingsSection({
         }
       },
     })
+  const inviterRewardMode = useWatch({
+    control: form.control,
+    name: 'quota_setting.inviter_reward_mode',
+  })
 
   return (
     <SettingsSection title={t('Quota Settings')}>
@@ -182,34 +232,162 @@ export function QuotaSettingsSection({
               )}
             />
 
-            <FormField
-              control={form.control}
-              name='QuotaForInviter'
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('Inviter Reward')}</FormLabel>
-                  <FormControl>
-                    <Input
-                      type='number'
-                      value={field.value ?? ''}
-                      onChange={handleNumberChange(field.onChange)}
-                      name={field.name}
-                      onBlur={field.onBlur}
-                      ref={field.ref}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    {t(
-                      'Quota given to users who invite others ({{formattedQuota}})',
-                      {
-                        formattedQuota: formatQuotaInputValue(field.value),
-                      }
-                    )}
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            <SettingsFormGridItem span='full'>
+              <FormField
+                control={form.control}
+                name='quota_setting.inviter_reward_mode'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel id='inviter-reward-mode-label'>
+                      {t('Inviter Reward Mode')}
+                    </FormLabel>
+                    <FormControl>
+                      <ToggleGroup
+                        value={[field.value]}
+                        onValueChange={(value) => {
+                          const nextMode = value.find(
+                            (item) => item !== field.value
+                          )
+                          if (
+                            nextMode === 'fixed' ||
+                            nextMode === 'percentage'
+                          ) {
+                            if (nextMode === 'fixed') {
+                              const percentage = Number(
+                                form.getValues(
+                                  'quota_setting.inviter_reward_percentage'
+                                )
+                              )
+                              if (
+                                !Number.isFinite(percentage) ||
+                                percentage < 0 ||
+                                percentage > 100
+                              ) {
+                                form.setValue(
+                                  'quota_setting.inviter_reward_percentage',
+                                  Number.isFinite(percentage)
+                                    ? Math.min(100, Math.max(0, percentage))
+                                    : 0,
+                                  { shouldDirty: true, shouldValidate: true }
+                                )
+                              }
+                            } else {
+                              const fixedReward = Number(
+                                form.getValues('QuotaForInviter')
+                              )
+                              if (
+                                !Number.isFinite(fixedReward) ||
+                                fixedReward < 0
+                              ) {
+                                form.setValue('QuotaForInviter', 0, {
+                                  shouldDirty: true,
+                                  shouldValidate: true,
+                                })
+                              }
+                            }
+                            field.onChange(nextMode)
+                          }
+                        }}
+                        aria-labelledby='inviter-reward-mode-label'
+                        variant='outline'
+                        size='sm'
+                        spacing={2}
+                        className='grid w-full grid-cols-1 gap-2 sm:grid-cols-2'
+                      >
+                        <ToggleGroupItem
+                          value='fixed'
+                          className='h-auto min-h-12 w-full px-3 py-2'
+                        >
+                          {t('Fixed Reward')}
+                        </ToggleGroupItem>
+                        <ToggleGroupItem
+                          value='percentage'
+                          className='h-auto min-h-12 w-full px-3 py-2'
+                        >
+                          {t('Top-up Percentage')}
+                        </ToggleGroupItem>
+                      </ToggleGroup>
+                    </FormControl>
+                    <FormDescription>
+                      {inviterRewardMode === 'percentage'
+                        ? t(
+                            'Reward inviters after invited users complete top-ups.'
+                          )
+                        : t(
+                            'Grant a fixed quota reward when an invited user registers.'
+                          )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </SettingsFormGridItem>
+
+            {inviterRewardMode === 'percentage' ? (
+              <FormField
+                control={form.control}
+                name='quota_setting.inviter_reward_percentage'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Inviter Reward Percentage')}</FormLabel>
+                    <InputGroup>
+                      <FormControl>
+                        <InputGroupInput
+                          type='number'
+                          min={0}
+                          max={100}
+                          step='0.01'
+                          inputMode='decimal'
+                          value={field.value ?? ''}
+                          onChange={handleNumberChange(field.onChange)}
+                          name={field.name}
+                          onBlur={field.onBlur}
+                          ref={field.ref}
+                        />
+                      </FormControl>
+                      <InputGroupAddon align='inline-end'>%</InputGroupAddon>
+                    </InputGroup>
+                    <FormDescription>
+                      {t(
+                        "The inviter receives an extra {{percentage}}% of each invited user's credited top-up quota; the invited user's credited quota is unchanged.",
+                        { percentage: field.value ?? 0 }
+                      )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            ) : (
+              <FormField
+                control={form.control}
+                name='QuotaForInviter'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Fixed Inviter Reward')}</FormLabel>
+                    <FormControl>
+                      <Input
+                        type='number'
+                        min={0}
+                        value={field.value ?? ''}
+                        onChange={handleNumberChange(field.onChange)}
+                        name={field.name}
+                        onBlur={field.onBlur}
+                        ref={field.ref}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {t(
+                        'Fixed quota awarded when an invited user registers ({{formattedQuota}})',
+                        {
+                          formattedQuota: formatQuotaInputValue(field.value),
+                        }
+                      )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
 
             <FormField
               control={form.control}

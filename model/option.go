@@ -258,6 +258,11 @@ func updateOptionMap(key string, value string) (err error) {
 	defer common.OptionMapRWMutex.Unlock()
 	common.OptionMap[key] = value
 
+	if strings.HasPrefix(key, "quota_setting.") {
+		configKey := strings.TrimPrefix(key, "quota_setting.")
+		return operation_setting.UpdateQuotaSetting(map[string]string{configKey: value})
+	}
+
 	// 检查是否是模型配置 - 使用更规范的方式处理
 	if handleConfigUpdate(key, value) {
 		return nil // 已由配置系统处理
