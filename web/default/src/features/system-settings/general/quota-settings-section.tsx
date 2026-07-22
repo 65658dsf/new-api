@@ -304,14 +304,14 @@ export function QuotaSettingsSection({
                           value='percentage'
                           className='h-auto min-h-12 w-full px-3 py-2'
                         >
-                          {t('Top-up Percentage')}
+                          {t('Top-up & Subscription Percentage')}
                         </ToggleGroupItem>
                       </ToggleGroup>
                     </FormControl>
                     <FormDescription>
                       {inviterRewardMode === 'percentage'
                         ? t(
-                            'Reward inviters after invited users complete top-ups.'
+                            'Reward inviters after invited users complete top-ups or subscription purchases.'
                           )
                         : t(
                             'Grant a fixed quota reward when an invited user registers.'
@@ -349,7 +349,7 @@ export function QuotaSettingsSection({
                     </InputGroup>
                     <FormDescription>
                       {t(
-                        "The inviter receives an extra {{percentage}}% of each invited user's credited top-up quota; the invited user's credited quota is unchanged.",
+                        "The inviter receives an extra {{percentage}}% reward based on each invited user's credited top-up quota or subscription purchase amount; the invited user's credited quota and subscription benefits are unchanged.",
                         { percentage: field.value ?? 0 }
                       )}
                     </FormDescription>

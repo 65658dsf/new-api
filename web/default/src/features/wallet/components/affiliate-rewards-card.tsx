@@ -74,7 +74,7 @@ export function AffiliateRewardsCard({
     )
   } else if (rewardMode === 'percentage') {
     rewardDescription = t(
-      'Earn an extra {{percentage}}% of the credited quota from each completed top-up by users you invite.',
+      'For each user you invite, earn an extra {{percentage}}% reward based on their credited top-up quota or subscription purchase amount.',
       { percentage: rewardPercentage }
     )
   }
