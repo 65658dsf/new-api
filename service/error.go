@@ -150,6 +150,11 @@ func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFai
 	if extraUsageErr := claudeThirdPartyExtraUsageError(resp.StatusCode, message); extraUsageErr != nil {
 		return extraUsageErr
 	}
+	if message == "" {
+		// The body parsed as JSON but carried no usable error message; log the
+		// raw body so the upstream failure remains diagnosable.
+		logger.LogError(ctx, fmt.Sprintf("bad response status code %d with empty error message, body: %s", resp.StatusCode, responseBodyPreview))
+	}
 	newApiErr = types.NewOpenAIError(errors.New(message), types.ErrorCodeBadResponseStatusCode, resp.StatusCode)
 	if showBodyWhenFail {
 		newApiErr.Err = buildErrWithBody(newApiErr.Error())
