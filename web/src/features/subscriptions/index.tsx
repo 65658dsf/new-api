@@ -17,11 +17,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { Info } from 'lucide-react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { SectionPageLayout } from '@/components/layout'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
+import { AdminSubscriptionsTable } from './components/admin-subscriptions-table'
 import { SubscriptionsDialogs } from './components/subscriptions-dialogs'
 import { SubscriptionsPrimaryButtons } from './components/subscriptions-primary-buttons'
 import {
@@ -33,6 +36,8 @@ import { SubscriptionsTable } from './components/subscriptions-table'
 function SubscriptionsContent() {
   const { t } = useTranslation()
   const { complianceConfirmed } = useSubscriptions()
+  const [activeSection, setActiveSection] = useState('plans')
+  const isPlanSection = activeSection === 'plans'
 
   return (
     <>
@@ -41,33 +46,57 @@ function SubscriptionsContent() {
           {t('Subscription Management')}
         </SectionPageLayout.Title>
         <SectionPageLayout.Actions>
-          <div className='flex items-center gap-2'>
-            <Alert variant='default' className='hidden px-3 py-2 sm:flex'>
-              <Info className='h-4 w-4' />
-              <AlertDescription className='text-xs'>
-                {t(
-                  'Stripe/Creem requires creating products on the third-party platform and entering the ID'
-                )}
-              </AlertDescription>
-            </Alert>
-            <SubscriptionsPrimaryButtons />
-          </div>
-        </SectionPageLayout.Actions>
-        <SectionPageLayout.Content>
-          <div className='flex h-full min-h-0 flex-col gap-4'>
-            {!complianceConfirmed ? (
-              <Alert variant='destructive' className='shrink-0'>
-                <AlertDescription>
+          {isPlanSection ? (
+            <div className='flex items-center gap-2'>
+              <Alert variant='default' className='hidden px-3 py-2 sm:flex'>
+                <Info className='h-4 w-4' />
+                <AlertDescription className='text-xs'>
                   {t(
-                    'Subscription plan creation and changes are locked until the administrator confirms compliance terms in Payment Gateway settings.'
+                    'Stripe/Creem requires creating products on the third-party platform and entering the ID'
                   )}
                 </AlertDescription>
               </Alert>
-            ) : null}
-            <div className='min-h-0 flex-1'>
-              <SubscriptionsTable />
+              <SubscriptionsPrimaryButtons />
             </div>
-          </div>
+          ) : null}
+        </SectionPageLayout.Actions>
+        <SectionPageLayout.Content>
+          <Tabs
+            value={activeSection}
+            onValueChange={setActiveSection}
+            className='h-full min-h-0 gap-4'
+          >
+            <TabsList className='max-w-full flex-wrap justify-start group-data-horizontal/tabs:h-auto'>
+              <TabsTrigger value='plans'>{t('Subscription Plans')}</TabsTrigger>
+              <TabsTrigger value='activated'>
+                {t('Activated Subscriptions')}
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent
+              value='plans'
+              className='flex min-h-0 flex-1 flex-col gap-4'
+            >
+              {!complianceConfirmed ? (
+                <Alert variant='destructive' className='shrink-0'>
+                  <AlertDescription>
+                    {t(
+                      'Subscription plan creation and changes are locked until the administrator confirms compliance terms in Payment Gateway settings.'
+                    )}
+                  </AlertDescription>
+                </Alert>
+              ) : null}
+              <div className='min-h-0 flex-1'>
+                <SubscriptionsTable />
+              </div>
+            </TabsContent>
+
+            <TabsContent value='activated' className='min-h-0 flex-1'>
+              {activeSection === 'activated' ? (
+                <AdminSubscriptionsTable />
+              ) : null}
+            </TabsContent>
+          </Tabs>
         </SectionPageLayout.Content>
       </SectionPageLayout>
 

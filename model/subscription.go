@@ -303,6 +303,30 @@ type SubscriptionSummary struct {
 	Subscription *UserSubscription `json:"subscription"`
 }
 
+type AdminSubscriptionUserInfo struct {
+	Id          int    `json:"id"`
+	Username    string `json:"username"`
+	DisplayName string `json:"display_name"`
+	Email       string `json:"email"`
+}
+
+type AdminSubscriptionPlanInfo struct {
+	Id    int    `json:"id"`
+	Title string `json:"title"`
+}
+
+type AdminSubscriptionRecord struct {
+	Subscription UserSubscription           `json:"subscription"`
+	User         *AdminSubscriptionUserInfo `json:"user,omitempty"`
+	Plan         *AdminSubscriptionPlanInfo `json:"plan,omitempty"`
+}
+
+type AdminSubscriptionQueryOptions struct {
+	Keyword string
+	Status  string
+	PlanId  int
+}
+
 type SubscriptionResetResult struct {
 	PlanId           int    `json:"plan_id"`
 	MatchedCount     int    `json:"matched_count"`
@@ -985,6 +1009,145 @@ func buildSubscriptionSummaries(subs []UserSubscription) []SubscriptionSummary {
 		})
 	}
 	return result
+}
+
+func ListAdminSubscriptions(pageInfo *common.PageInfo, options AdminSubscriptionQueryOptions) ([]*AdminSubscriptionRecord, int64, error) {
+	if pageInfo == nil {
+		return nil, 0, errors.New("pageInfo is nil")
+	}
+	if pageInfo.GetPage() < 1 || pageInfo.GetPageSize() < 1 || pageInfo.GetPageSize() > 100 {
+		return nil, 0, errors.New("invalid page info")
+	}
+
+	query := DB.Model(&UserSubscription{})
+	status := strings.ToLower(strings.TrimSpace(options.Status))
+	now := common.GetTimestamp()
+	switch status {
+	case "", "all":
+	case "active":
+		query = query.Where("status = ? AND end_time > ?", status, now)
+	case "expired":
+		query = query.Where(
+			"(status = ? OR (status = ? AND end_time <= ?))",
+			"expired",
+			"active",
+			now,
+		)
+	case "cancelled":
+		query = query.Where("status = ?", status)
+	default:
+		return nil, 0, errors.New("invalid subscription status")
+	}
+	if options.PlanId > 0 {
+		query = query.Where("plan_id = ?", options.PlanId)
+	}
+
+	keyword := strings.TrimSpace(options.Keyword)
+	if keyword != "" {
+		pattern, err := sanitizeLikePattern(keyword)
+		if err != nil {
+			return nil, 0, err
+		}
+		if !strings.Contains(pattern, "%") && len([]rune(keyword)) >= 2 {
+			pattern = "%" + pattern + "%"
+		}
+
+		userSubquery := DB.Unscoped().Model(&User{}).
+			Select("id").
+			Where(
+				"username LIKE ? ESCAPE '!' OR display_name LIKE ? ESCAPE '!' OR email LIKE ? ESCAPE '!'",
+				pattern,
+				pattern,
+				pattern,
+			)
+		planSubquery := DB.Model(&SubscriptionPlan{}).
+			Select("id").
+			Where("title LIKE ? ESCAPE '!'", pattern)
+		conditions := []string{
+			"source LIKE ? ESCAPE '!'",
+			"user_id IN (?)",
+			"plan_id IN (?)",
+		}
+		args := []interface{}{pattern, userSubquery, planSubquery}
+		if id, err := strconv.Atoi(keyword); err == nil && id > 0 {
+			conditions = append(conditions, "id = ?", "user_id = ?", "plan_id = ?")
+			args = append(args, id, id, id)
+		}
+		query = query.Where("("+strings.Join(conditions, " OR ")+")", args...)
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var subscriptions []UserSubscription
+	if err := query.Order("id desc").
+		Limit(pageInfo.GetPageSize()).
+		Offset(pageInfo.GetStartIdx()).
+		Find(&subscriptions).Error; err != nil {
+		return nil, 0, err
+	}
+	if len(subscriptions) == 0 {
+		return []*AdminSubscriptionRecord{}, total, nil
+	}
+
+	userIds := make([]int, 0, len(subscriptions))
+	planIds := make([]int, 0, len(subscriptions))
+	seenUsers := make(map[int]struct{}, len(subscriptions))
+	seenPlans := make(map[int]struct{}, len(subscriptions))
+	for _, subscription := range subscriptions {
+		if _, ok := seenUsers[subscription.UserId]; !ok {
+			seenUsers[subscription.UserId] = struct{}{}
+			userIds = append(userIds, subscription.UserId)
+		}
+		if _, ok := seenPlans[subscription.PlanId]; !ok {
+			seenPlans[subscription.PlanId] = struct{}{}
+			planIds = append(planIds, subscription.PlanId)
+		}
+	}
+
+	var users []User
+	if err := DB.Unscoped().
+		Select("id", "username", "display_name", "email").
+		Where("id IN ?", userIds).
+		Find(&users).Error; err != nil {
+		return nil, 0, err
+	}
+	userById := make(map[int]AdminSubscriptionUserInfo, len(users))
+	for _, user := range users {
+		userById[user.Id] = AdminSubscriptionUserInfo{
+			Id:          user.Id,
+			Username:    user.Username,
+			DisplayName: user.DisplayName,
+			Email:       user.Email,
+		}
+	}
+
+	var plans []SubscriptionPlan
+	if err := DB.Select("id", "title").
+		Where("id IN ?", planIds).
+		Find(&plans).Error; err != nil {
+		return nil, 0, err
+	}
+	planById := make(map[int]AdminSubscriptionPlanInfo, len(plans))
+	for _, plan := range plans {
+		planById[plan.Id] = AdminSubscriptionPlanInfo{Id: plan.Id, Title: plan.Title}
+	}
+
+	records := make([]*AdminSubscriptionRecord, 0, len(subscriptions))
+	for _, subscription := range subscriptions {
+		record := &AdminSubscriptionRecord{Subscription: subscription}
+		if user, ok := userById[subscription.UserId]; ok {
+			userCopy := user
+			record.User = &userCopy
+		}
+		if plan, ok := planById[subscription.PlanId]; ok {
+			planCopy := plan
+			record.Plan = &planCopy
+		}
+		records = append(records, record)
+	}
+	return records, total, nil
 }
 
 // AdminInvalidateUserSubscription marks a user subscription as cancelled and ends it immediately.

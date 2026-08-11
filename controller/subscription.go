@@ -134,6 +134,38 @@ func AdminListSubscriptionPlans(c *gin.Context) {
 	common.ApiSuccess(c, result)
 }
 
+// AdminListSubscriptions returns a paginated overview of subscriptions that
+// have been granted to users, including the subscriber and quota snapshot.
+func AdminListSubscriptions(c *gin.Context) {
+	pageInfo := common.GetPageQuery(c)
+	if pageInfo.Page < 1 {
+		pageInfo.Page = 1
+	}
+	if pageInfo.PageSize < 1 {
+		pageInfo.PageSize = common.ItemsPerPage
+	}
+	options := model.AdminSubscriptionQueryOptions{
+		Keyword: c.Query("keyword"),
+		Status:  c.Query("status"),
+	}
+	if planIdValue := strings.TrimSpace(c.Query("plan_id")); planIdValue != "" {
+		planId, err := strconv.Atoi(planIdValue)
+		if err != nil || planId <= 0 {
+			common.ApiErrorMsg(c, "无效的套餐ID")
+			return
+		}
+		options.PlanId = planId
+	}
+	items, total, err := model.ListAdminSubscriptions(pageInfo, options)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	pageInfo.SetTotal(int(total))
+	pageInfo.SetItems(items)
+	common.ApiSuccess(c, pageInfo)
+}
+
 type AdminUpsertSubscriptionPlanRequest struct {
 	Plan model.SubscriptionPlan `json:"plan"`
 }

@@ -69,12 +69,28 @@ export const userSubscriptionSchema = z.object({
   amount_used: z.number(),
   next_reset_time: z.number().optional(),
   billing_group: z.string().optional(),
+  created_at: z.number().optional(),
+  updated_at: z.number().optional(),
 })
 
 export type UserSubscription = z.infer<typeof userSubscriptionSchema>
 
 export interface UserSubscriptionRecord {
   subscription: UserSubscription
+}
+
+export interface AdminSubscriptionRecord {
+  subscription: UserSubscription
+  user?: {
+    id: number
+    username: string
+    display_name?: string
+    email?: string
+  }
+  plan?: {
+    id: number
+    title: string
+  }
 }
 
 // ============================================================================
@@ -85,6 +101,25 @@ export interface ApiResponse<T = unknown> {
   success: boolean
   message?: string
   data?: T
+}
+
+export interface GetAdminSubscriptionsParams {
+  p?: number
+  page_size?: number
+  keyword?: string
+  status?: string
+  plan_id?: number
+}
+
+export interface GetAdminSubscriptionsResponse {
+  success: boolean
+  message?: string
+  data?: {
+    items: AdminSubscriptionRecord[]
+    total: number
+    page: number
+    page_size: number
+  }
 }
 
 export interface PlanPayload {

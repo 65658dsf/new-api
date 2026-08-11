@@ -30,6 +30,8 @@ import type {
   SubscriptionPayResponse,
   SubscriptionPayRequest,
   SelfSubscriptionData,
+  GetAdminSubscriptionsParams,
+  GetAdminSubscriptionsResponse,
 } from './types'
 
 // ============================================================================
@@ -38,6 +40,15 @@ import type {
 
 export async function getAdminPlans(): Promise<ApiResponse<PlanRecord[]>> {
   const res = await api.get('/api/subscription/admin/plans')
+  return res.data
+}
+
+export async function getAdminSubscriptions(
+  params: GetAdminSubscriptionsParams = {}
+): Promise<GetAdminSubscriptionsResponse> {
+  const res = await api.get('/api/subscription/admin/subscriptions', {
+    params,
+  })
   return res.data
 }
 

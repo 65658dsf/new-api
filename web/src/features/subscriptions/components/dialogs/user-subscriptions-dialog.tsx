@@ -32,7 +32,6 @@ import {
   sideDrawerHeaderClassName,
 } from '@/components/drawer-layout'
 import { GroupBadge } from '@/components/group-badge'
-import { StatusBadge } from '@/components/status-badge'
 import { TableId } from '@/components/table-id'
 import { Button } from '@/components/ui/button'
 import {
@@ -68,47 +67,13 @@ import {
 } from '../../api'
 import { formatTimestamp } from '../../lib'
 import type { PlanRecord, UserSubscriptionRecord } from '../../types'
+import { SubscriptionStatusBadge } from '../subscription-status-badge'
 
 interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
   user: { id: number; username?: string } | null
   onSuccess?: () => void
-}
-
-function SubscriptionStatusBadge(props: {
-  sub: UserSubscriptionRecord['subscription']
-  t: (key: string) => string
-}) {
-  // eslint-disable-next-line react-hooks/purity
-  const now = Date.now() / 1000
-  const isExpired = (props.sub.end_time || 0) > 0 && props.sub.end_time < now
-  const isActive = props.sub.status === 'active' && !isExpired
-  if (isActive) {
-    return (
-      <StatusBadge
-        label={props.t('Active')}
-        variant='success'
-        copyable={false}
-      />
-    )
-  }
-  if (props.sub.status === 'cancelled') {
-    return (
-      <StatusBadge
-        label={props.t('Invalidated')}
-        variant='neutral'
-        copyable={false}
-      />
-    )
-  }
-  return (
-    <StatusBadge
-      label={props.t('Expired')}
-      variant='neutral'
-      copyable={false}
-    />
-  )
 }
 
 export function UserSubscriptionsDialog(props: Props) {
@@ -318,7 +283,9 @@ export function UserSubscriptionsDialog(props: Props) {
                   id: 'status',
                   header: t('Status'),
                   cell: (record) => (
-                    <SubscriptionStatusBadge sub={record.subscription} t={t} />
+                    <SubscriptionStatusBadge
+                      subscription={record.subscription}
+                    />
                   ),
                 },
                 {
