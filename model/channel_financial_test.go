@@ -6,6 +6,8 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
 )
 
 func TestBuildChannelFinancialReport(t *testing.T) {
@@ -32,6 +34,18 @@ func TestBuildChannelFinancialReport(t *testing.T) {
 	assert.Equal(t, int64(2), report.Trend[1].RequestCount)
 	assert.Equal(t, "east", report.ByChannel[0].Name)
 	assert.Equal(t, "gpt-a", report.ByModel[0].ModelName)
+}
+
+func TestChannelFinancialLaunchOptionConditionIsMySQLSafe(t *testing.T) {
+	db, err := gorm.Open(mysql.New(mysql.Config{
+		DSN:                       "root:root@tcp(127.0.0.1:3306)/test",
+		SkipInitializeWithVersion: true,
+	}), &gorm.Config{DryRun: true, DisableAutomaticPing: true})
+	require.NoError(t, err)
+
+	result := db.Where(&Option{Key: ChannelFinancialLaunchOptionKey}).First(&Option{})
+	require.NoError(t, result.Error)
+	assert.Contains(t, result.Statement.SQL.String(), "`key` = ?")
 }
 
 func TestGetHistoricalChannelFinancialRecords(t *testing.T) {

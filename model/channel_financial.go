@@ -45,7 +45,7 @@ func InitializeChannelFinancialLaunchTime() error {
 		return errors.New("main database is not initialized")
 	}
 	var option Option
-	result := DB.Where("key = ?", ChannelFinancialLaunchOptionKey).First(&option)
+	result := DB.Where(&Option{Key: ChannelFinancialLaunchOptionKey}).First(&option)
 	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 		return DB.Create(&Option{
 			Key:   ChannelFinancialLaunchOptionKey,
@@ -63,7 +63,7 @@ func GetChannelFinancialLaunchTime() int64 {
 		return 0
 	}
 	var option Option
-	if err := DB.Where("key = ?", ChannelFinancialLaunchOptionKey).First(&option).Error; err != nil {
+	if err := DB.Where(&Option{Key: ChannelFinancialLaunchOptionKey}).First(&option).Error; err != nil {
 		return 0
 	}
 	value, err := strconv.ParseInt(option.Value, 10, 64)
