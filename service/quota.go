@@ -228,7 +228,9 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 		model.UpdateChannelUsedQuota(relayInfo.ChannelId, quota)
 	}
 
+	financialSettlementSucceeded := true
 	if err := SettleBilling(ctx, relayInfo, quota); err != nil {
+		financialSettlementSucceeded = false
 		logger.LogError(ctx, "error settling billing: "+err.Error())
 	}
 
@@ -241,6 +243,7 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 	if tieredResult != nil {
 		InjectTieredBillingInfo(other, relayInfo, tieredResult)
 	}
+	markFinancialSettlement(other, financialSettlementSucceeded)
 	attachQuotaSaturation(ctx, relayInfo, other)
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,
@@ -256,6 +259,15 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 		Group:            relayInfo.UsingGroup,
 		Other:            other,
 	})
+	var baseQuotaBeforeGroup *float64
+	if tieredResult != nil && totalTokens > 0 {
+		baseQuotaBeforeGroup = &tieredResult.ActualQuotaBeforeGroup
+	} else {
+		baseQuotaBeforeGroup = audioFinancialBaseQuota(quotaInfo, modelPrice, totalTokens)
+	}
+	if financialSettlementSucceeded {
+		RecordChannelFinancialConsume(ctx, relayInfo, logModel, quota, baseQuotaBeforeGroup)
+	}
 }
 
 func CalcOpenRouterCacheCreateTokens(usage dto.Usage, priceData types.PriceData) int {
@@ -351,7 +363,9 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 		model.UpdateChannelUsedQuota(relayInfo.ChannelId, quota)
 	}
 
+	financialSettlementSucceeded := true
 	if err := SettleBilling(ctx, relayInfo, quota); err != nil {
+		financialSettlementSucceeded = false
 		logger.LogError(ctx, "error settling billing: "+err.Error())
 	}
 
@@ -364,6 +378,7 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 	if tieredResult != nil {
 		InjectTieredBillingInfo(other, relayInfo, tieredResult)
 	}
+	markFinancialSettlement(other, financialSettlementSucceeded)
 	attachQuotaSaturation(ctx, relayInfo, other)
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,
@@ -379,6 +394,15 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 		Group:            relayInfo.UsingGroup,
 		Other:            other,
 	})
+	var baseQuotaBeforeGroup *float64
+	if tieredResult != nil && totalTokens > 0 {
+		baseQuotaBeforeGroup = &tieredResult.ActualQuotaBeforeGroup
+	} else {
+		baseQuotaBeforeGroup = audioFinancialBaseQuota(quotaInfo, modelPrice, totalTokens)
+	}
+	if financialSettlementSucceeded {
+		RecordChannelFinancialConsume(ctx, relayInfo, logModel, quota, baseQuotaBeforeGroup)
+	}
 	gopool.Go(func() {
 		perfmetrics.RecordRelaySample(relayInfo, true, int64(usage.CompletionTokens))
 	})

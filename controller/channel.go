@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -475,6 +476,9 @@ func validateChannel(channel *model.Channel, isAdd bool) error {
 	if channel == nil {
 		return fmt.Errorf("channel cannot be empty")
 	}
+	if math.IsNaN(channel.CostRate) || math.IsInf(channel.CostRate, 0) || channel.CostRate < 0 {
+		return fmt.Errorf("channel cost rate must be a non-negative finite number")
+	}
 
 	// 校验 channel settings
 	if err := channel.ValidateSettings(); err != nil {
@@ -610,11 +614,28 @@ func getVertexArrayKeys(keys string) ([]string, error) {
 }
 
 func AddChannel(c *gin.Context) {
-	addChannelRequest := AddChannelRequest{}
-	err := c.ShouldBindJSON(&addChannelRequest)
+	rawBody, err := c.GetRawData()
 	if err != nil {
 		common.ApiError(c, err)
 		return
+	}
+	addChannelRequest := AddChannelRequest{}
+	if err := common.Unmarshal(rawBody, &addChannelRequest); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	var requestData struct {
+		Channel map[string]any `json:"channel"`
+	}
+	if err := common.Unmarshal(rawBody, &requestData); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if costRate, ok := requestData.Channel["cost_rate"]; ok && costRate == nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "channel cost rate must be a non-negative finite number"})
+		return
+	} else if !ok && addChannelRequest.Channel != nil {
+		addChannelRequest.Channel.CostRate = 1
 	}
 
 	// 使用统一的校验函数
@@ -701,10 +722,12 @@ func AddChannel(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	model.InitChannelCache()
 	recordManageAudit(c, "channel.create", map[string]interface{}{
-		"name":  addChannelRequest.Channel.Name,
-		"type":  addChannelRequest.Channel.Type,
-		"count": len(channels),
+		"name":      addChannelRequest.Channel.Name,
+		"type":      addChannelRequest.Channel.Type,
+		"cost_rate": addChannelRequest.Channel.CostRate,
+		"count":     len(channels),
 	})
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -963,18 +986,24 @@ func UpdateChannel(c *gin.Context) {
 		return
 	}
 	clearChannelReadOnlyFields(&channel, requestData)
-
-	// 使用统一的校验函数
-	if err := validateChannel(&channel.Channel, false); err != nil {
+	// Preserve existing ChannelInfo to ensure multi-key channels keep correct state even if the client does not send ChannelInfo in the request.
+	originChannel, err := model.GetChannelById(channel.Id, true)
+	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
 			"message": err.Error(),
 		})
 		return
 	}
-	// Preserve existing ChannelInfo to ensure multi-key channels keep correct state even if the client does not send ChannelInfo in the request.
-	originChannel, err := model.GetChannelById(channel.Id, true)
-	if err != nil {
+	if costRate, provided := requestData["cost_rate"]; provided && costRate == nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "channel cost rate must be a non-negative finite number"})
+		return
+	} else if !provided {
+		channel.CostRate = originChannel.CostRate
+	}
+
+	// 使用统一的校验函数
+	if err := validateChannel(&channel.Channel, false); err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
 			"message": err.Error(),
@@ -1083,7 +1112,11 @@ func UpdateChannel(c *gin.Context) {
 			// 覆盖模式：直接使用新密钥（默认行为，不需要特殊处理）
 		}
 	}
-	err = channel.Update()
+	updateFields := []string(nil)
+	if _, ok := requestData["cost_rate"]; ok {
+		updateFields = append(updateFields, "cost_rate")
+	}
+	err = channel.Update(updateFields...)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -1102,6 +1135,9 @@ func UpdateChannel(c *gin.Context) {
 	}
 	if channel.Type != originChannel.Type {
 		changedFields = append(changedFields, "type")
+	}
+	if channel.CostRate != originChannel.CostRate {
+		changedFields = append(changedFields, "cost_rate")
 	}
 	if !equalStringPtr(channel.BaseURL, originChannel.BaseURL) {
 		changedFields = append(changedFields, "base_url")

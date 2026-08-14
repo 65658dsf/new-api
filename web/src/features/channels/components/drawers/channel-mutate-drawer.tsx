@@ -267,6 +267,7 @@ const ADVANCED_CUSTOM_ROUTE_TYPE_PREVIEW_LIMIT = 3
 const UPSTREAM_DETECTED_MODEL_PREVIEW_LIMIT = 8
 const SENSITIVE_FORM_FIELDS = [
   'type',
+  'cost_rate',
   'base_url',
   'key',
   'openai_organization',
@@ -2040,6 +2041,44 @@ export function ChannelMutateDrawer({
                             )}
                           />
                         </div>
+
+                        <fieldset
+                          disabled={sensitiveLocked}
+                          className='min-w-0 disabled:opacity-60'
+                        >
+                          <FormField
+                            control={form.control}
+                            name='cost_rate'
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>{t('Channel Cost Rate')}</FormLabel>
+                                <FormControl>
+                                  <Input
+                                    type='number'
+                                    min='0'
+                                    step='0.01'
+                                    inputMode='decimal'
+                                    value={
+                                      Number.isNaN(field.value)
+                                        ? ''
+                                        : field.value
+                                    }
+                                    onChange={(event) => {
+                                      const value = event.target.valueAsNumber
+                                      field.onChange(value)
+                                    }}
+                                  />
+                                </FormControl>
+                                <FormDescription>
+                                  {t(
+                                    'Used only for administrator cost analytics. It does not affect user billing.'
+                                  )}
+                                </FormDescription>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        </fieldset>
 
                         {!isEditing && (
                           <FormField
@@ -4233,9 +4272,7 @@ export function ChannelMutateDrawer({
                                         <SelectValue />
                                       </SelectTrigger>
                                     </FormControl>
-                                    <SelectContent
-                                      alignItemWithTrigger={false}
-                                    >
+                                    <SelectContent alignItemWithTrigger={false}>
                                       <SelectGroup>
                                         <SelectItem value='auto'>
                                           {t('Auto')}

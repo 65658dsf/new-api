@@ -16,10 +16,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useQuery } from '@tanstack/react-query'
 import {
   Activity,
   Box,
   CreditCard,
+  ChartNoAxesCombined,
   FileText,
   FlaskConical,
   Key,
@@ -35,7 +37,6 @@ import {
   Users,
   Wallet,
 } from 'lucide-react'
-import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 
 import type { SidebarData } from '@/components/layout/types'
@@ -173,12 +174,14 @@ export function useSidebarData(): SidebarData {
               '/dashboard/payment-overview',
               '/dashboard/payment-orders',
               '/dashboard/invoice-applications',
+              '/dashboard/cost-profit',
               '/subscriptions',
             ],
             configUrls: [
               '/dashboard/payment-overview',
               '/dashboard/payment-orders',
               '/dashboard/invoice-applications',
+              '/dashboard/cost-profit',
               '/subscriptions',
             ],
             items: [
@@ -198,6 +201,11 @@ export function useSidebarData(): SidebarData {
                 icon: ReceiptText,
                 badge: pendingInvoiceBadge,
                 badgeVariant: 'destructive',
+              },
+              {
+                title: t('Cost & Profit'),
+                url: '/dashboard/cost-profit',
+                icon: ChartNoAxesCombined,
               },
               {
                 title: t('Subscriptions'),

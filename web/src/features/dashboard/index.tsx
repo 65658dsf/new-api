@@ -50,6 +50,7 @@ import {
   type DashboardSectionId,
   DASHBOARD_DEFAULT_SECTION,
   DASHBOARD_ANALYTICS_SECTION_IDS,
+  isDashboardAdminOnlySection,
 } from './section-registry'
 import type {
   DashboardChartPreferences,
@@ -116,6 +117,12 @@ const LazyFlowCharts = lazy(() =>
 const LazyPaymentOverview = lazy(() =>
   import('./components/payments/payment-overview').then((m) => ({
     default: m.PaymentOverview,
+  }))
+)
+
+const LazyCostProfitDashboard = lazy(() =>
+  import('./components/financial/cost-profit-dashboard').then((m) => ({
+    default: m.CostProfitDashboard,
   }))
 )
 
@@ -216,6 +223,9 @@ const SECTION_META: Record<DashboardSectionId, { titleKey: string }> = {
   'invoice-applications': {
     titleKey: 'Invoice Applications',
   },
+  'cost-profit': {
+    titleKey: 'Financial Analysis',
+  },
 }
 
 export function Dashboard() {
@@ -275,7 +285,7 @@ export function Dashboard() {
   const visibleSections = useMemo(
     () =>
       DASHBOARD_ANALYTICS_SECTION_IDS.filter(
-        (section) => section !== 'users' || isAdmin
+        (section) => isAdmin || !isDashboardAdminOnlySection(section)
       ),
     [isAdmin]
   )
@@ -459,6 +469,13 @@ export function Dashboard() {
             <FadeIn>
               <Suspense fallback={<ModelChartsFallback />}>
                 <LazyInvoiceApplications />
+              </Suspense>
+            </FadeIn>
+          )}
+          {activeSection === 'cost-profit' && (
+            <FadeIn>
+              <Suspense fallback={<ModelChartsFallback />}>
+                <LazyCostProfitDashboard />
               </Suspense>
             </FadeIn>
           )}

@@ -121,6 +121,7 @@ func formatUserLogs(logs []*Log, startIdx int) {
 		if otherMap != nil {
 			// Remove admin-only debug fields.
 			delete(otherMap, "admin_info")
+			delete(otherMap, "financial_settled")
 			// Remove operation-audit details (operator/route info), admin-only.
 			delete(otherMap, "audit_info")
 			// delete(otherMap, "reject_reason")
@@ -414,6 +415,7 @@ type RecordTaskBillingLogParams struct {
 	Group     string
 	Other     map[string]interface{}
 	NodeName  string // 任务发起节点；为空时回退当前节点
+	RequestId string
 }
 
 func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
@@ -441,6 +443,7 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 		TokenId:   params.TokenId,
 		Group:     params.Group,
 		Other:     common.MapToJsonStr(params.Other),
+		RequestId: params.RequestId,
 	}
 	err := createLog(log)
 	if err != nil {

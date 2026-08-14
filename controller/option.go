@@ -81,7 +81,7 @@ func GetOptions(c *gin.Context) {
 	optionValues := make(map[string]string)
 	common.OptionMapRWMutex.Lock()
 	for k, v := range common.OptionMap {
-		if k == "theme.frontend" {
+		if k == "theme.frontend" || k == model.ChannelFinancialLaunchOptionKey {
 			continue
 		}
 		value := common.Interface2String(v)
@@ -129,6 +129,10 @@ func UpdateOption(c *gin.Context) {
 			"success": false,
 			"message": "无效的参数",
 		})
+		return
+	}
+	if option.Key == model.ChannelFinancialLaunchOptionKey {
+		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
 	switch option.Value.(type) {

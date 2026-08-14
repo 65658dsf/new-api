@@ -579,10 +579,21 @@ func RelayTask(c *gin.Context) {
 
 	// ── 成功：结算 + 日志 + 插入任务 ──
 	if taskErr == nil {
+		financialSettlementSucceeded := true
 		if settleErr := service.SettleBilling(c, relayInfo, result.Quota); settleErr != nil {
+			financialSettlementSucceeded = false
 			common.SysError("settle task billing error: " + settleErr.Error())
 		}
-		service.LogTaskConsumption(c, relayInfo)
+		service.LogTaskConsumption(c, relayInfo, financialSettlementSucceeded)
+		if financialSettlementSucceeded {
+			groupRatio := relayInfo.PriceData.GroupRatioInfo.GroupRatio
+			if groupRatio > 0 {
+				baseQuota := float64(result.Quota) / groupRatio
+				service.RecordChannelFinancialConsume(c, relayInfo, relayInfo.OriginModelName, result.Quota, &baseQuota)
+			} else {
+				service.RecordChannelFinancialConsume(c, relayInfo, relayInfo.OriginModelName, result.Quota, nil)
+			}
+		}
 
 		task := model.InitTask(result.Platform, relayInfo)
 		task.PrivateData.UpstreamTaskID = result.UpstreamTaskID
@@ -591,12 +602,16 @@ func RelayTask(c *gin.Context) {
 		task.PrivateData.TokenId = relayInfo.TokenId
 		task.PrivateData.NodeName = common.NodeName
 		task.PrivateData.BillingContext = &model.TaskBillingContext{
-			ModelPrice:      relayInfo.PriceData.ModelPrice,
-			GroupRatio:      relayInfo.PriceData.GroupRatioInfo.GroupRatio,
-			ModelRatio:      relayInfo.PriceData.ModelRatio,
-			OtherRatios:     relayInfo.PriceData.OtherRatios(),
-			OriginModelName: relayInfo.OriginModelName,
-			PerCallBilling:  common.StringsContains(constant.TaskPricePatches, relayInfo.OriginModelName) || relayInfo.PriceData.UsePrice,
+			ModelPrice:         relayInfo.PriceData.ModelPrice,
+			GroupRatio:         relayInfo.PriceData.GroupRatioInfo.GroupRatio,
+			ModelRatio:         relayInfo.PriceData.ModelRatio,
+			OtherRatios:        relayInfo.PriceData.OtherRatios(),
+			OriginModelName:    relayInfo.OriginModelName,
+			PerCallBilling:     common.StringsContains(constant.TaskPricePatches, relayInfo.OriginModelName) || relayInfo.PriceData.UsePrice,
+			ChannelName:        relayInfo.ChannelName,
+			ChannelCostRate:    relayInfo.ChannelCostRate,
+			ChannelCostRateSet: true,
+			QuotaPerUnit:       common.QuotaPerUnit,
 		}
 		task.Quota = result.Quota
 		task.Data = result.TaskData

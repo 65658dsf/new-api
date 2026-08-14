@@ -35,6 +35,7 @@ type Channel struct {
 	BaseURL            *string `json:"base_url" gorm:"column:base_url;default:''"`
 	Other              string  `json:"other"`
 	Balance            float64 `json:"balance"` // in USD
+	CostRate           float64 `json:"cost_rate" gorm:"not null;default:1"`
 	BalanceUpdatedTime int64   `json:"balance_updated_time" gorm:"bigint"`
 	Models             string  `json:"models"`
 	Group              string  `json:"group" gorm:"type:varchar(64);default:'default'"`
@@ -57,6 +58,18 @@ type Channel struct {
 
 	// cache info
 	Keys []string `json:"-" gorm:"-"`
+}
+
+// InitializeChannelCostRates repairs nullable values left by older schemas
+// without overwriting the valid explicit zero rate.
+func InitializeChannelCostRates() error {
+	if DB == nil {
+		return errors.New("main database is not initialized")
+	}
+	if !DB.Migrator().HasTable(&Channel{}) || !DB.Migrator().HasColumn(&Channel{}, "cost_rate") {
+		return nil
+	}
+	return DB.Model(&Channel{}).Where("cost_rate IS NULL").Update("cost_rate", 1).Error
 }
 
 type ChannelInfo struct {
@@ -448,9 +461,21 @@ func BatchInsertChannels(channels []Channel) error {
 	}()
 
 	for _, chunk := range lo.Chunk(channels, 50) {
+		zeroCostRateIndexes := make([]int, 0)
+		for i := range chunk {
+			if chunk[i].CostRate == 0 {
+				zeroCostRateIndexes = append(zeroCostRateIndexes, i)
+			}
+		}
 		if err := tx.Create(&chunk).Error; err != nil {
 			tx.Rollback()
 			return err
+		}
+		for _, i := range zeroCostRateIndexes {
+			if err := tx.Model(&Channel{}).Where("id = ?", chunk[i].Id).Update("cost_rate", 0).Error; err != nil {
+				tx.Rollback()
+				return err
+			}
 		}
 		for _, channel_ := range chunk {
 			if err := channel_.AddAbilities(tx); err != nil {
@@ -531,15 +556,22 @@ func (channel *Channel) GetStatusCodeMapping() string {
 
 func (channel *Channel) Insert() error {
 	var err error
+	zeroCostRate := channel.CostRate == 0
 	err = DB.Create(channel).Error
 	if err != nil {
 		return err
+	}
+	if zeroCostRate {
+		channel.CostRate = 0
+		if err := DB.Model(channel).Update("cost_rate", 0).Error; err != nil {
+			return err
+		}
 	}
 	err = channel.AddAbilities(nil)
 	return err
 }
 
-func (channel *Channel) Update() error {
+func (channel *Channel) Update(fields ...string) error {
 	// If this is a multi-key channel, recalculate MultiKeySize based on the current key list to avoid inconsistency after editing keys
 	if channel.ChannelInfo.IsMultiKey {
 		var keyStr string
@@ -579,9 +611,15 @@ func (channel *Channel) Update() error {
 		}
 	}
 	var err error
-	err = DB.Model(channel).Updates(channel).Error
+	query := DB.Model(channel)
+	err = query.Updates(channel).Error
 	if err != nil {
 		return err
+	}
+	if len(fields) > 0 {
+		if err := DB.Model(channel).Select(fields).Updates(channel).Error; err != nil {
+			return err
+		}
 	}
 	DB.Model(channel).First(channel, "id = ?", channel.Id)
 	err = channel.UpdateAbilities(nil)

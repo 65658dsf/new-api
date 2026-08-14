@@ -258,6 +258,9 @@ func migrateDB() error {
 		return err
 	}
 
+	if err := InitializeChannelCostRates(); err != nil {
+		return err
+	}
 	err := DB.AutoMigrate(
 		&Channel{},
 		&Token{},
@@ -294,8 +297,15 @@ func migrateDB() error {
 		&SystemTaskLock{},
 		&CasbinRule{},
 		&AuthzRole{},
+		&ChannelFinancialRecord{},
 	)
 	if err != nil {
+		return err
+	}
+	if err := InitializeChannelCostRates(); err != nil {
+		return err
+	}
+	if err := InitializeChannelFinancialLaunchTime(); err != nil {
 		return err
 	}
 	if err := InitializeUserAuthVersions(); err != nil {
@@ -319,6 +329,9 @@ func migrateDB() error {
 func migrateDBFast() error {
 
 	var wg sync.WaitGroup
+	if err := InitializeChannelCostRates(); err != nil {
+		return err
+	}
 
 	migrations := []struct {
 		model interface{}
@@ -357,6 +370,7 @@ func migrateDBFast() error {
 		{&SystemInstance{}, "SystemInstance"},
 		{&SystemTask{}, "SystemTask"},
 		{&SystemTaskLock{}, "SystemTaskLock"},
+		{&ChannelFinancialRecord{}, "ChannelFinancialRecord"},
 	}
 	// 动态计算migration数量，确保errChan缓冲区足够大
 	errChan := make(chan error, len(migrations))
@@ -380,6 +394,12 @@ func migrateDBFast() error {
 		if err != nil {
 			return err
 		}
+	}
+	if err := InitializeChannelCostRates(); err != nil {
+		return err
+	}
+	if err := InitializeChannelFinancialLaunchTime(); err != nil {
+		return err
 	}
 	if err := InitializeUserAuthVersions(); err != nil {
 		return err

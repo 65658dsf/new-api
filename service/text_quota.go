@@ -448,7 +448,9 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		model.UpdateChannelUsedQuota(relayInfo.ChannelId, summary.Quota)
 	}
 
+	financialSettlementSucceeded := true
 	if err := SettleBilling(ctx, relayInfo, summary.Quota); err != nil {
+		financialSettlementSucceeded = false
 		logger.LogError(ctx, "error settling billing: "+err.Error())
 	}
 
@@ -520,6 +522,7 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	if tieredBillingApplied {
 		InjectTieredBillingInfo(other, relayInfo, tieredResult)
 	}
+	markFinancialSettlement(other, financialSettlementSucceeded)
 
 	attachQuotaSaturation(ctx, relayInfo, other)
 
@@ -537,6 +540,13 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		Group:            relayInfo.UsingGroup,
 		Other:            other,
 	})
+	baseQuotaBeforeGroup := textFinancialBaseQuota(ctx, relayInfo, billingUsage, summary, tieredResult)
+	if !summary.hasBillableUsage() {
+		baseQuotaBeforeGroup = nil
+	}
+	if financialSettlementSucceeded {
+		RecordChannelFinancialConsume(ctx, relayInfo, logModel, summary.Quota, baseQuotaBeforeGroup)
+	}
 	gopool.Go(func() {
 		perfmetrics.RecordRelaySample(relayInfo, true, int64(summary.CompletionTokens))
 	})

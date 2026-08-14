@@ -30,6 +30,9 @@ func channelHasSensitiveChanges(channel *PatchChannel, origin *model.Channel, re
 	if _, ok := requestData["settings"]; ok && channel.OtherSettings != origin.OtherSettings {
 		return true
 	}
+	if costRate, ok := requestData["cost_rate"]; ok && costRate != nil && channel.CostRate != origin.CostRate {
+		return true
+	}
 	if _, ok := requestData["key_mode"]; ok && channel.KeyMode != nil {
 		return true
 	}
@@ -70,6 +73,7 @@ var channelSensitiveFields = map[string]struct{}{
 	"setting":             {},
 	"other":               {},
 	"settings":            {},
+	"cost_rate":           {},
 	"key_mode":            {},
 }
 

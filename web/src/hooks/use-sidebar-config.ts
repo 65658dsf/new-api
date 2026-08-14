@@ -114,6 +114,7 @@ const URL_TO_CONFIG_MAP: Record<string, { section: string; module: string }> = {
     section: 'admin',
     module: 'invoice_applications',
   },
+  '/dashboard/cost-profit': { section: 'admin', module: 'payment_overview' },
   '/keys': { section: 'console', module: 'token' },
   '/usage-logs': { section: 'console', module: 'log' },
   '/usage-logs/common': { section: 'console', module: 'log' },

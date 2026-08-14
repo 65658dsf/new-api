@@ -45,6 +45,7 @@ type UseChannelMutateFormParams = {
 
 const SENSITIVE_UPDATE_FIELDS = [
   'type',
+  'cost_rate',
   'key',
   'base_url',
   'openai_organization',

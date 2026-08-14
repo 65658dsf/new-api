@@ -3,6 +3,7 @@ package controller
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -81,6 +82,62 @@ func TestValidateChannelRequiresNewAPIBaseURL(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
+		})
+	}
+}
+
+func TestValidateChannelCostRate(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		costRate float64
+		wantErr  bool
+	}{
+		{name: "default", costRate: 1},
+		{name: "zero", costRate: 0},
+		{name: "greater than one", costRate: 2.5},
+		{name: "negative", costRate: -0.1, wantErr: true},
+		{name: "nan", costRate: math.NaN(), wantErr: true},
+		{name: "positive infinity", costRate: math.Inf(1), wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateChannel(&model.Channel{CostRate: test.costRate}, false)
+			if test.wantErr {
+				require.ErrorContains(t, err, "cost rate")
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestAddChannelCostRateDefaultAndExplicitZero(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		field    string
+		expected float64
+	}{
+		{name: "omitted", expected: 1},
+		{name: "explicit zero", field: `,"cost_rate":0`, expected: 0},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			db := setupModelListControllerTestDB(t)
+			body := fmt.Sprintf(`{"mode":"single","channel":{"type":1,"name":"channel","key":"key","models":"gpt-test","group":"default"%s}}`, test.field)
+			recorder := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(recorder)
+			ctx.Request = httptest.NewRequest(http.MethodPost, "/api/channel/", bytes.NewBufferString(body))
+			ctx.Request.Header.Set("Content-Type", "application/json")
+
+			AddChannel(ctx)
+
+			require.Equal(t, http.StatusOK, recorder.Code)
+			var response struct {
+				Success bool `json:"success"`
+			}
+			require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+			require.True(t, response.Success, recorder.Body.String())
+			var channel model.Channel
+			require.NoError(t, db.First(&channel).Error)
+			assert.Equal(t, test.expected, channel.CostRate)
 		})
 	}
 }

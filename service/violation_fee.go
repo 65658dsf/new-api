@@ -146,6 +146,7 @@ func ChargeViolationFeeIfNeeded(ctx *gin.Context, relayInfo *relaycommon.RelayIn
 		"upstream_error_code":  fmt.Sprintf("%v", oai.Code),
 		"violation_fee_marker": CSAMViolationMarker,
 	}
+	markFinancialSettlement(other, true)
 
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:      relayInfo.ChannelId,
@@ -159,6 +160,8 @@ func ChargeViolationFeeIfNeeded(ctx *gin.Context, relayInfo *relaycommon.RelayIn
 		Group:          relayInfo.UsingGroup,
 		Other:          other,
 	})
+	zeroBaseCost := 0.0
+	RecordChannelFinancialConsume(ctx, relayInfo, relayInfo.OriginModelName, feeQuota, &zeroBaseCost)
 
 	return true
 }

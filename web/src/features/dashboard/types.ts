@@ -48,6 +48,48 @@ export interface FlowQuotaDataItem {
   quota?: number
 }
 
+export interface FinancialSummary {
+  revenue_usd: number
+  cost_usd: number
+  profit_usd: number
+  profit_margin: number
+  request_count: number
+  covered_count: number
+  exact_count: number
+  estimated_count: number
+  uncovered_count: number
+}
+
+export interface FinancialTrendPoint {
+  date: string
+  revenue_usd: number
+  cost_usd: number
+  profit_usd: number
+  request_count: number
+}
+
+export interface FinancialDimensionRow {
+  id?: number
+  name: string
+  model_name?: string
+  revenue_usd: number
+  cost_usd: number
+  profit_usd: number
+  request_count: number
+  covered_count: number
+  estimated_count: number
+  uncovered_count: number
+}
+
+export interface ChannelFinancialReport {
+  summary: FinancialSummary
+  trend: FinancialTrendPoint[]
+  by_channel: FinancialDimensionRow[]
+  by_model: FinancialDimensionRow[]
+  range_start: number
+  range_end: number
+}
+
 export type FlowMetric = 'quota' | 'tokens' | 'requests'
 
 export type FlowOverflowMode = 'aggregate' | 'hide'

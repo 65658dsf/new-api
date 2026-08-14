@@ -20,6 +20,7 @@ import { api } from '@/lib/api'
 
 import type {
   DashboardApiResponse,
+  ChannelFinancialReport,
   FlowQuotaDataItem,
   QuotaDataItem,
   TopUpListResponse,
@@ -86,6 +87,23 @@ export async function getFlowQuotaDates(
     data?: FlowQuotaDataItem[]
     message?: string
   }>(endpoint, { params })
+  return res.data
+}
+
+export async function getChannelFinancialReport(params: {
+  start_timestamp: number
+  end_timestamp: number
+  channel_id?: number
+  model_name?: string
+}): Promise<DashboardApiResponse<ChannelFinancialReport>> {
+  const res = await api.get<DashboardApiResponse<ChannelFinancialReport>>(
+    '/api/data/financial',
+    {
+      params,
+      skipBusinessError: true,
+      disableDuplicate: true,
+    }
+  )
   return res.data
 }
 

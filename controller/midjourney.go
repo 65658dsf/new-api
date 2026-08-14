@@ -213,9 +213,16 @@ func runMidjourneyTaskUpdateOnce(ctx context.Context, report func(processed, tot
 			if err != nil {
 				logger.LogError(ctx, "UpdateMidjourneyTask task error: "+err.Error())
 			} else if won && shouldReturnQuota {
+				refundSucceeded := true
 				err = model.IncreaseUserQuota(task.UserId, task.Quota, false)
 				if err != nil {
+					refundSucceeded = false
 					logger.LogError(ctx, "fail to increase user quota: "+err.Error())
+				}
+				refundOther := map[string]interface{}{
+					"task_id":           task.MjId,
+					"reason":            "构图失败",
+					"financial_settled": refundSucceeded,
 				}
 				model.RecordTaskBillingLog(model.RecordTaskBillingLogParams{
 					UserId:    task.UserId,
@@ -224,11 +231,12 @@ func runMidjourneyTaskUpdateOnce(ctx context.Context, report func(processed, tot
 					ChannelId: task.ChannelId,
 					ModelName: service.CovertMjpActionToModelName(task.Action),
 					Quota:     task.Quota,
-					Other: map[string]interface{}{
-						"task_id": task.MjId,
-						"reason":  "构图失败",
-					},
+					Other:     refundOther,
+					RequestId: task.MjId,
 				})
+				if refundSucceeded {
+					service.RecordChannelFinancialRefund(task.MjId, task.ChannelId, service.CovertMjpActionToModelName(task.Action), task.Quota)
+				}
 			}
 		}
 	}

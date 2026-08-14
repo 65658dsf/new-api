@@ -63,6 +63,12 @@ const DASHBOARD_SECTIONS = [
     adminOnly: true,
     build: () => null,
   },
+  {
+    id: 'cost-profit',
+    titleKey: 'Financial Analysis',
+    adminOnly: true,
+    build: () => null,
+  },
 ] as const
 
 export type DashboardSectionId = (typeof DASHBOARD_SECTIONS)[number]['id']
@@ -72,12 +78,14 @@ const ADMIN_ONLY_SECTIONS = new Set<string>([
   'payment-overview',
   'payment-orders',
   'invoice-applications',
+  'cost-profit',
 ])
 
 export const DASHBOARD_ANALYTICS_SECTION_IDS = [
   'models',
   'flow',
   'users',
+  'cost-profit',
 ] as const satisfies readonly DashboardSectionId[]
 
 const dashboardRegistry = createSectionRegistry<

@@ -198,6 +198,10 @@ export const channelFormSchema = z
     name: z.string().min(1, ERROR_MESSAGES.REQUIRED_NAME),
     type: z.number().min(0, ERROR_MESSAGES.REQUIRED_TYPE),
     base_url: z.string().optional(),
+    cost_rate: z
+      .number()
+      .finite(ERROR_MESSAGES.INVALID_COST_RATE)
+      .nonnegative(ERROR_MESSAGES.INVALID_COST_RATE),
     key: z.string(),
     openai_organization: z.string().optional(),
     models: z.string().min(1, ERROR_MESSAGES.REQUIRED_MODELS),
@@ -402,6 +406,7 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   name: '',
   type: 1,
   base_url: '',
+  cost_rate: 1,
   key: '',
   openai_organization: '',
   models: '',
@@ -487,8 +492,7 @@ export function transformChannelToFormDefaults(
         thinking_to_content: parsed.thinking_to_content || false,
         proxy: parsed.proxy || '',
         http_protocol: protocol,
-        http2_connection_shards:
-          protocol === HTTP_PROTOCOL_HTTP1 ? 1 : shards,
+        http2_connection_shards: protocol === HTTP_PROTOCOL_HTTP1 ? 1 : shards,
         pass_through_body_enabled: parsed.pass_through_body_enabled || false,
         system_prompt: parsed.system_prompt || '',
         system_prompt_override: parsed.system_prompt_override || false,
@@ -554,6 +558,7 @@ export function transformChannelToFormDefaults(
     name: channel.name || '',
     type: channel.type,
     base_url: channel.base_url || '',
+    cost_rate: channel.cost_rate ?? 1,
     key: '', // Never populate key from backend for security
     openai_organization: channel.openai_organization || '',
     models: channel.models || '',
@@ -780,6 +785,7 @@ export function transformFormDataToCreatePayload(formData: ChannelFormValues): {
     name: formData.name,
     type: formData.type,
     base_url: normalizeBaseUrl(formData.base_url) || null,
+    cost_rate: formData.cost_rate,
     key: formData.key,
     openai_organization: formData.openai_organization || null,
     models: formData.models,
@@ -829,6 +835,7 @@ export function transformFormDataToUpdatePayload(
     name: formData.name,
     type: formData.type,
     base_url: normalizeBaseUrl(formData.base_url) || null,
+    cost_rate: formData.cost_rate,
     openai_organization: formData.openai_organization || null,
     models: formData.models,
     group: formatGroups(formData.group),
