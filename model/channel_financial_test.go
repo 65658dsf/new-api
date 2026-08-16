@@ -124,7 +124,7 @@ func TestHistoricalFinancialRecordsUseRateVersionAtRequestTime(t *testing.T) {
 	assert.NotEqual(t, rows[1].CostRateVersionId, rows[2].CostRateVersionId)
 }
 
-func TestHistoricalFinancialRecordsUseDefaultRateForDeletedChannel(t *testing.T) {
+func TestHistoricalFinancialRecordsUseHistoricalRateForDeletedChannel(t *testing.T) {
 	setupChannelCostRateTestDB(t)
 	previousLogDB := LOG_DB
 	previousQuotaPerUnit := common.QuotaPerUnit
@@ -154,10 +154,10 @@ func TestHistoricalFinancialRecordsUseDefaultRateForDeletedChannel(t *testing.T)
 	rows, err := GetHistoricalChannelFinancialRecords(100, 100, 0, "", nil)
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
-	assert.Equal(t, 1.0, rows[0].CostRate)
-	assert.Zero(t, rows[0].CostRateVersionId)
+	assert.Equal(t, 0.4, rows[0].CostRate)
+	assert.NotZero(t, rows[0].CostRateVersionId)
 	assert.Equal(t, 0.001, rows[0].BaseCostUSD)
-	assert.Equal(t, 0.001, rows[0].ChannelCostUSD)
+	assert.Equal(t, 0.0004, rows[0].ChannelCostUSD)
 }
 
 func TestHistoricalFinancialRecordsSkipExactRowsWithoutRequestID(t *testing.T) {

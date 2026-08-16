@@ -258,12 +258,12 @@ func GetHistoricalChannelFinancialRecords(start, end int64, channelID int, model
 			channelName = channel.Name
 		}
 		costRate = normalizedChannelCostRate(costRate)
-		if exists {
-			if rateSnapshot, found := resolveChannelCostRateVersion(rateVersionsByChannel[log.ChannelId], channelCostRateEffectiveAtFromUnixSeconds(log.CreatedAt)); found {
-				costRate = rateSnapshot.CostRate
-				costRateVersionID = rateSnapshot.VersionId
-				costRateEffectiveAt = rateSnapshot.EffectiveAt
-			}
+		// Channel rate versions outlive the channel row so deleted channels keep
+		// their configured historical cost in administrator reports.
+		if rateSnapshot, found := resolveChannelCostRateVersion(rateVersionsByChannel[log.ChannelId], channelCostRateEffectiveAtFromUnixSeconds(log.CreatedAt)); found {
+			costRate = rateSnapshot.CostRate
+			costRateVersionID = rateSnapshot.VersionId
+			costRateEffectiveAt = rateSnapshot.EffectiveAt
 		}
 		revenueUSD := 0.0
 		if quotaPerUnitValid {
