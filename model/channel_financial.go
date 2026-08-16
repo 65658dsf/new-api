@@ -13,22 +13,24 @@ import (
 )
 
 type ChannelFinancialRecord struct {
-	Id             int64   `json:"id" gorm:"primaryKey"`
-	CreatedAt      int64   `json:"created_at" gorm:"bigint;index"`
-	EventType      string  `json:"event_type" gorm:"type:varchar(16);index"`
-	RequestId      string  `json:"request_id" gorm:"type:varchar(64);index"`
-	ReferenceId    string  `json:"reference_id,omitempty" gorm:"type:varchar(64);index"`
-	ChannelId      int     `json:"channel_id" gorm:"index"`
-	ChannelName    string  `json:"channel_name" gorm:"type:varchar(255)"`
-	ModelName      string  `json:"model_name" gorm:"type:varchar(255);index"`
-	CostRate       float64 `json:"cost_rate" gorm:"type:decimal(20,10);not null"`
-	RevenueUSD     float64 `json:"revenue_usd" gorm:"type:decimal(30,12);not null"`
-	BaseCostUSD    float64 `json:"base_cost_usd" gorm:"type:decimal(30,12);not null"`
-	ChannelCostUSD float64 `json:"channel_cost_usd" gorm:"type:decimal(30,12);not null"`
-	Quota          int     `json:"quota"`
-	QuotaPerUnit   float64 `json:"quota_per_unit" gorm:"type:decimal(30,12);not null"`
-	Estimated      bool    `json:"estimated" gorm:"not null"`
-	Covered        bool    `json:"covered" gorm:"not null"`
+	Id                  int64   `json:"id" gorm:"primaryKey"`
+	CreatedAt           int64   `json:"created_at" gorm:"bigint;index"`
+	EventType           string  `json:"event_type" gorm:"type:varchar(16);index"`
+	RequestId           string  `json:"request_id" gorm:"type:varchar(64);index"`
+	ReferenceId         string  `json:"reference_id,omitempty" gorm:"type:varchar(64);index"`
+	ChannelId           int     `json:"channel_id" gorm:"index"`
+	ChannelName         string  `json:"channel_name" gorm:"type:varchar(255)"`
+	ModelName           string  `json:"model_name" gorm:"type:varchar(255);index"`
+	CostRate            float64 `json:"cost_rate" gorm:"type:decimal(20,10);not null"`
+	CostRateVersionId   int64   `json:"cost_rate_version_id,omitempty" gorm:"bigint;index"`
+	CostRateEffectiveAt int64   `json:"cost_rate_effective_at,omitempty" gorm:"bigint"`
+	RevenueUSD          float64 `json:"revenue_usd" gorm:"type:decimal(30,12);not null"`
+	BaseCostUSD         float64 `json:"base_cost_usd" gorm:"type:decimal(30,12);not null"`
+	ChannelCostUSD      float64 `json:"channel_cost_usd" gorm:"type:decimal(30,12);not null"`
+	Quota               int     `json:"quota"`
+	QuotaPerUnit        float64 `json:"quota_per_unit" gorm:"type:decimal(30,12);not null"`
+	Estimated           bool    `json:"estimated" gorm:"not null"`
+	Covered             bool    `json:"covered" gorm:"not null"`
 }
 
 // ChannelFinancialLaunchOptionKey stores the first timestamp at which exact
@@ -78,6 +80,9 @@ func GetChannelFinancialLaunchTime() int64 {
 func (r *ChannelFinancialRecord) BeforeCreate(tx *gorm.DB) error {
 	if r.CostRate < 0 || math.IsNaN(r.CostRate) || math.IsInf(r.CostRate, 0) {
 		return errors.New("channel financial cost rate must be a non-negative finite number")
+	}
+	if r.CostRateVersionId < 0 || r.CostRateEffectiveAt < 0 {
+		return errors.New("channel financial cost rate snapshot cannot be negative")
 	}
 	if math.IsNaN(r.RevenueUSD) || math.IsInf(r.RevenueUSD, 0) {
 		return errors.New("channel financial revenue must be finite")
@@ -224,6 +229,10 @@ func GetHistoricalChannelFinancialRecords(start, end int64, channelID int, model
 	for _, channel := range channels {
 		channelByID[channel.Id] = channel
 	}
+	rateVersionsByChannel, err := getChannelCostRateVersions(channelIDs)
+	if err != nil {
+		return nil, err
+	}
 
 	rows := make([]*ChannelFinancialRecord, 0, len(logs))
 	for _, log := range logs {
@@ -241,13 +250,20 @@ func GetHistoricalChannelFinancialRecords(start, end int64, channelID int, model
 		}
 		channel, exists := channelByID[log.ChannelId]
 		costRate := 1.0
+		costRateVersionID := int64(0)
+		costRateEffectiveAt := int64(0)
 		channelName := ""
 		if exists {
 			costRate = channel.CostRate
 			channelName = channel.Name
 		}
-		if costRate < 0 || math.IsNaN(costRate) || math.IsInf(costRate, 0) {
-			costRate = 1
+		costRate = normalizedChannelCostRate(costRate)
+		if exists {
+			if rateSnapshot, found := resolveChannelCostRateVersion(rateVersionsByChannel[log.ChannelId], channelCostRateEffectiveAtFromUnixSeconds(log.CreatedAt)); found {
+				costRate = rateSnapshot.CostRate
+				costRateVersionID = rateSnapshot.VersionId
+				costRateEffectiveAt = rateSnapshot.EffectiveAt
+			}
 		}
 		revenueUSD := 0.0
 		if quotaPerUnitValid {
@@ -257,17 +273,19 @@ func GetHistoricalChannelFinancialRecords(start, end int64, channelID int, model
 			}
 		}
 		row := &ChannelFinancialRecord{
-			CreatedAt:    log.CreatedAt,
-			EventType:    eventType,
-			RequestId:    log.RequestId,
-			ChannelId:    log.ChannelId,
-			ChannelName:  channelName,
-			ModelName:    log.ModelName,
-			CostRate:     costRate,
-			RevenueUSD:   revenueUSD,
-			Quota:        log.Quota,
-			QuotaPerUnit: quotaPerUnit,
-			Estimated:    launchAt <= 0 || log.CreatedAt < launchAt,
+			CreatedAt:           log.CreatedAt,
+			EventType:           eventType,
+			RequestId:           log.RequestId,
+			ChannelId:           log.ChannelId,
+			ChannelName:         channelName,
+			ModelName:           log.ModelName,
+			CostRate:            costRate,
+			CostRateVersionId:   costRateVersionID,
+			CostRateEffectiveAt: costRateEffectiveAt,
+			RevenueUSD:          revenueUSD,
+			Quota:               log.Quota,
+			QuotaPerUnit:        quotaPerUnit,
+			Estimated:           launchAt <= 0 || log.CreatedAt < launchAt,
 		}
 		if launchAt > 0 && log.CreatedAt >= launchAt {
 			settled, known := financialLogSettlementStatus(log.Other)

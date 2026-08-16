@@ -23,7 +23,7 @@ func setupFinancialControllerTest(t *testing.T) {
 	previousMainType, previousLogType := common.MainDatabaseType(), common.LogDatabaseType()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.Channel{}, &model.Log{}, &model.ChannelFinancialRecord{}))
+	require.NoError(t, db.AutoMigrate(&model.Channel{}, &model.ChannelCostRateVersion{}, &model.Log{}, &model.ChannelFinancialRecord{}))
 	model.DB, model.LOG_DB = db, db
 	common.QuotaPerUnit = 50
 	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)

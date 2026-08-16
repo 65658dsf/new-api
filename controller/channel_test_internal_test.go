@@ -138,6 +138,9 @@ func TestAddChannelCostRateDefaultAndExplicitZero(t *testing.T) {
 			var channel model.Channel
 			require.NoError(t, db.First(&channel).Error)
 			assert.Equal(t, test.expected, channel.CostRate)
+			var version model.ChannelCostRateVersion
+			require.NoError(t, db.Where("channel_id = ?", channel.Id).First(&version).Error)
+			assert.Equal(t, test.expected, version.CostRate)
 		})
 	}
 }

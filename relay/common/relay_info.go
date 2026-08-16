@@ -56,25 +56,27 @@ type ResponsesUsageInfo struct {
 }
 
 type ChannelMeta struct {
-	ChannelType          int
-	ChannelId            int
-	ChannelName          string
-	ChannelCostRate      float64
-	ChannelIsMultiKey    bool
-	ChannelMultiKeyIndex int
-	ChannelBaseUrl       string
-	ApiType              int
-	ApiVersion           string
-	ApiKey               string
-	Organization         string
-	ChannelCreateTime    int64
-	ParamOverride        map[string]interface{}
-	HeadersOverride      map[string]interface{}
-	ChannelSetting       dto.ChannelSettings
-	ChannelOtherSettings dto.ChannelOtherSettings
-	UpstreamModelName    string
-	IsModelMapped        bool
-	SupportStreamOptions bool // 是否支持流式选项
+	ChannelType                int
+	ChannelId                  int
+	ChannelName                string
+	ChannelCostRate            float64
+	ChannelCostRateVersionId   int64
+	ChannelCostRateEffectiveAt int64
+	ChannelIsMultiKey          bool
+	ChannelMultiKeyIndex       int
+	ChannelBaseUrl             string
+	ApiType                    int
+	ApiVersion                 string
+	ApiKey                     string
+	Organization               string
+	ChannelCreateTime          int64
+	ParamOverride              map[string]interface{}
+	HeadersOverride            map[string]interface{}
+	ChannelSetting             dto.ChannelSettings
+	ChannelOtherSettings       dto.ChannelOtherSettings
+	UpstreamModelName          string
+	IsModelMapped              bool
+	SupportStreamOptions       bool // 是否支持流式选项
 }
 
 type TokenCountMeta struct {
@@ -193,27 +195,31 @@ func (info *RelayInfo) InitChannelMeta(c *gin.Context) {
 	if !hasChannelCostRate {
 		channelCostRate = 1
 	}
+	channelCostRateVersionId, _ := common.GetContextKeyType[int64](c, constant.ContextKeyChannelCostRateVersionId)
+	channelCostRateEffectiveAt, _ := common.GetContextKeyType[int64](c, constant.ContextKeyChannelCostRateEffectiveAt)
 	paramOverride := common.GetContextKeyStringMap(c, constant.ContextKeyChannelParamOverride)
 	headerOverride := common.GetContextKeyStringMap(c, constant.ContextKeyChannelHeaderOverride)
 	apiType, _ := common.ChannelType2APIType(channelType)
 	channelMeta := &ChannelMeta{
-		ChannelType:          channelType,
-		ChannelId:            common.GetContextKeyInt(c, constant.ContextKeyChannelId),
-		ChannelName:          common.GetContextKeyString(c, constant.ContextKeyChannelName),
-		ChannelCostRate:      channelCostRate,
-		ChannelIsMultiKey:    common.GetContextKeyBool(c, constant.ContextKeyChannelIsMultiKey),
-		ChannelMultiKeyIndex: common.GetContextKeyInt(c, constant.ContextKeyChannelMultiKeyIndex),
-		ChannelBaseUrl:       common.GetContextKeyString(c, constant.ContextKeyChannelBaseUrl),
-		ApiType:              apiType,
-		ApiVersion:           c.GetString("api_version"),
-		ApiKey:               common.GetContextKeyString(c, constant.ContextKeyChannelKey),
-		Organization:         c.GetString("channel_organization"),
-		ChannelCreateTime:    c.GetInt64("channel_create_time"),
-		ParamOverride:        paramOverride,
-		HeadersOverride:      headerOverride,
-		UpstreamModelName:    common.GetContextKeyString(c, constant.ContextKeyOriginalModel),
-		IsModelMapped:        false,
-		SupportStreamOptions: false,
+		ChannelType:                channelType,
+		ChannelId:                  common.GetContextKeyInt(c, constant.ContextKeyChannelId),
+		ChannelName:                common.GetContextKeyString(c, constant.ContextKeyChannelName),
+		ChannelCostRate:            channelCostRate,
+		ChannelCostRateVersionId:   channelCostRateVersionId,
+		ChannelCostRateEffectiveAt: channelCostRateEffectiveAt,
+		ChannelIsMultiKey:          common.GetContextKeyBool(c, constant.ContextKeyChannelIsMultiKey),
+		ChannelMultiKeyIndex:       common.GetContextKeyInt(c, constant.ContextKeyChannelMultiKeyIndex),
+		ChannelBaseUrl:             common.GetContextKeyString(c, constant.ContextKeyChannelBaseUrl),
+		ApiType:                    apiType,
+		ApiVersion:                 c.GetString("api_version"),
+		ApiKey:                     common.GetContextKeyString(c, constant.ContextKeyChannelKey),
+		Organization:               c.GetString("channel_organization"),
+		ChannelCreateTime:          c.GetInt64("channel_create_time"),
+		ParamOverride:              paramOverride,
+		HeadersOverride:            headerOverride,
+		UpstreamModelName:          common.GetContextKeyString(c, constant.ContextKeyOriginalModel),
+		IsModelMapped:              false,
+		SupportStreamOptions:       false,
 	}
 
 	if channelType == constant.ChannelTypeAzure {

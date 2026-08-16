@@ -177,6 +177,107 @@ func TestRecordChannelFinancialConsumeDoesNotAffectUserBilling(t *testing.T) {
 	assert.Equal(t, 0.000125, record.ChannelCostUSD)
 }
 
+func TestRecordChannelFinancialConsumeKeepsSelectedSnapshotAfterRateChange(t *testing.T) {
+	previousDB := model.DB
+	previousQuotaPerUnit := common.QuotaPerUnit
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.Channel{}, &model.ChannelCostRateVersion{}, &model.ChannelFinancialRecord{}))
+	model.DB = db
+	common.QuotaPerUnit = 500000
+	t.Cleanup(func() {
+		require.NoError(t, sqlDB.Close())
+		model.DB = previousDB
+		common.QuotaPerUnit = previousQuotaPerUnit
+	})
+
+	channel := &model.Channel{Key: "key", Name: "channel", CostRate: 0.8}
+	require.NoError(t, model.DB.Create(channel).Error)
+	initialVersion := &model.ChannelCostRateVersion{ChannelId: channel.Id, CostRate: 0.8, EffectiveAt: 0}
+	require.NoError(t, model.DB.Create(initialVersion).Error)
+	selectedSnapshot, err := model.GetCurrentChannelCostRateSnapshot(channel.Id, channel.CostRate)
+	require.NoError(t, err)
+	relayInfo := &relaycommon.RelayInfo{
+		RequestId: "before-rate-change",
+		StartTime: time.Unix(150, 0),
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelId:                  channel.Id,
+			ChannelName:                channel.Name,
+			ChannelCostRate:            selectedSnapshot.CostRate,
+			ChannelCostRateVersionId:   selectedSnapshot.VersionId,
+			ChannelCostRateEffectiveAt: selectedSnapshot.EffectiveAt,
+		},
+		PriceData: types.PriceData{GroupRatioInfo: types.GroupRatioInfo{GroupRatio: 1}},
+	}
+	require.NoError(t, model.DB.Model(channel).Update("cost_rate", 1.2).Error)
+	require.NoError(t, model.DB.Create(&model.ChannelCostRateVersion{
+		ChannelId:   channel.Id,
+		CostRate:    1.2,
+		EffectiveAt: time.Unix(200, 0).UnixNano(),
+	}).Error)
+
+	RecordChannelFinancialConsume(nil, relayInfo, "gpt-test", 500000, nil)
+
+	var record model.ChannelFinancialRecord
+	require.NoError(t, model.DB.First(&record).Error)
+	assert.Equal(t, 0.8, record.CostRate)
+	assert.Equal(t, 0.8, record.ChannelCostUSD)
+	assert.Equal(t, initialVersion.Id, record.CostRateVersionId)
+	assert.Equal(t, int64(150), record.CreatedAt)
+}
+
+func TestTaskFinancialAdjustmentKeepsSubmittedRateVersion(t *testing.T) {
+	previousDB := model.DB
+	previousQuotaPerUnit := common.QuotaPerUnit
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.Channel{}, &model.ChannelCostRateVersion{}, &model.ChannelFinancialRecord{}))
+	model.DB = db
+	common.QuotaPerUnit = 500000
+	t.Cleanup(func() {
+		require.NoError(t, sqlDB.Close())
+		model.DB = previousDB
+		common.QuotaPerUnit = previousQuotaPerUnit
+	})
+
+	channel := &model.Channel{Key: "key", Name: "channel", CostRate: 0.8}
+	require.NoError(t, model.DB.Create(channel).Error)
+	initialVersion := &model.ChannelCostRateVersion{ChannelId: channel.Id, CostRate: 0.8, EffectiveAt: 0}
+	require.NoError(t, model.DB.Create(initialVersion).Error)
+	task := &model.Task{
+		TaskID:     "task-version-snapshot",
+		ChannelId:  channel.Id,
+		Properties: model.Properties{OriginModelName: "gpt-test"},
+		PrivateData: model.TaskPrivateData{BillingContext: &model.TaskBillingContext{
+			GroupRatio:                 1,
+			ChannelName:                channel.Name,
+			ChannelCostRate:            initialVersion.CostRate,
+			ChannelCostRateSet:         true,
+			ChannelCostRateVersionId:   initialVersion.Id,
+			ChannelCostRateEffectiveAt: initialVersion.EffectiveAt,
+			QuotaPerUnit:               common.QuotaPerUnit,
+		}},
+	}
+	require.NoError(t, model.DB.Model(channel).Update("cost_rate", 1.2).Error)
+	require.NoError(t, model.DB.Create(&model.ChannelCostRateVersion{
+		ChannelId:   channel.Id,
+		CostRate:    1.2,
+		EffectiveAt: time.Unix(200, 0).UnixNano(),
+	}).Error)
+
+	RecordChannelFinancialTaskAdjustment(task, model.FinancialEventConsume, 500000)
+
+	var record model.ChannelFinancialRecord
+	require.NoError(t, model.DB.First(&record).Error)
+	assert.Equal(t, 0.8, record.CostRate)
+	assert.Equal(t, initialVersion.Id, record.CostRateVersionId)
+	assert.Equal(t, 0.8, record.ChannelCostUSD)
+}
+
 func TestFinancialRefundKeepsTheOriginalRateSnapshot(t *testing.T) {
 	previousDB := model.DB
 	previousQuotaPerUnit := common.QuotaPerUnit

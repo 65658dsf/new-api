@@ -2,6 +2,7 @@ package model
 
 import (
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/stretchr/testify/assert"
@@ -76,6 +77,87 @@ func TestGetHistoricalChannelFinancialRecords(t *testing.T) {
 	assert.Equal(t, 0.0005, rows[0].ChannelCostUSD)
 	assert.Equal(t, "uncovered", rows[1].RequestId)
 	assert.False(t, rows[1].Covered)
+}
+
+func TestHistoricalFinancialRecordsUseRateVersionAtRequestTime(t *testing.T) {
+	setupChannelCostRateTestDB(t)
+	previousLogDB := LOG_DB
+	previousQuotaPerUnit := common.QuotaPerUnit
+	LOG_DB = DB
+	common.QuotaPerUnit = 500000
+	require.NoError(t, DB.AutoMigrate(&Log{}, &Option{}, &ChannelFinancialRecord{}))
+	t.Cleanup(func() {
+		LOG_DB = previousLogDB
+		common.QuotaPerUnit = previousQuotaPerUnit
+	})
+
+	channel := &Channel{Id: 7, Key: "key", Name: "channel", CostRate: 1.2}
+	require.NoError(t, DB.Create(channel).Error)
+	for _, version := range []struct {
+		rate        float64
+		effectiveAt int64
+	}{
+		{rate: 0.8, effectiveAt: 0},
+		{rate: 0.5, effectiveAt: channelCostRateEffectiveAt(time.Unix(101, 0))},
+		{rate: 1.2, effectiveAt: channelCostRateEffectiveAt(time.Unix(103, 0))},
+	} {
+		_, err := appendChannelCostRateVersion(DB, channel.Id, version.rate, version.effectiveAt)
+		require.NoError(t, err)
+	}
+	require.NoError(t, DB.Create(&[]Log{
+		{CreatedAt: 100, Type: LogTypeConsume, RequestId: "old", ChannelId: channel.Id, ModelName: "gpt", Quota: 1000, Other: `{"group_ratio":2}`},
+		{CreatedAt: 102, Type: LogTypeConsume, RequestId: "middle", ChannelId: channel.Id, ModelName: "gpt", Quota: 1000, Other: `{"group_ratio":2}`},
+		{CreatedAt: 104, Type: LogTypeConsume, RequestId: "new", ChannelId: channel.Id, ModelName: "gpt", Quota: 1000, Other: `{"group_ratio":2}`},
+	}).Error)
+
+	rows, err := GetHistoricalChannelFinancialRecords(100, 104, 0, "", nil)
+	require.NoError(t, err)
+	require.Len(t, rows, 3)
+	assert.Equal(t, 0.8, rows[0].CostRate)
+	assert.Equal(t, 0.0008, rows[0].ChannelCostUSD)
+	assert.Equal(t, 0.5, rows[1].CostRate)
+	assert.Equal(t, 0.0005, rows[1].ChannelCostUSD)
+	assert.Equal(t, 1.2, rows[2].CostRate)
+	assert.Equal(t, 0.0012, rows[2].ChannelCostUSD)
+	assert.NotZero(t, rows[0].CostRateVersionId)
+	assert.NotEqual(t, rows[0].CostRateVersionId, rows[1].CostRateVersionId)
+	assert.NotEqual(t, rows[1].CostRateVersionId, rows[2].CostRateVersionId)
+}
+
+func TestHistoricalFinancialRecordsUseDefaultRateForDeletedChannel(t *testing.T) {
+	setupChannelCostRateTestDB(t)
+	previousLogDB := LOG_DB
+	previousQuotaPerUnit := common.QuotaPerUnit
+	LOG_DB = DB
+	common.QuotaPerUnit = 500000
+	require.NoError(t, DB.AutoMigrate(&Log{}, &ChannelFinancialRecord{}))
+	t.Cleanup(func() {
+		LOG_DB = previousLogDB
+		common.QuotaPerUnit = previousQuotaPerUnit
+	})
+
+	channel := &Channel{Id: 7, Key: "key", Name: "deleted", CostRate: 0.4}
+	require.NoError(t, DB.Create(channel).Error)
+	_, err := appendChannelCostRateVersion(DB, channel.Id, channel.CostRate, 0)
+	require.NoError(t, err)
+	require.NoError(t, DB.Delete(channel).Error)
+	require.NoError(t, DB.Create(&Log{
+		CreatedAt: 100,
+		Type:      LogTypeConsume,
+		RequestId: "deleted-channel",
+		ChannelId: channel.Id,
+		ModelName: "gpt",
+		Quota:     1000,
+		Other:     `{"group_ratio":2}`,
+	}).Error)
+
+	rows, err := GetHistoricalChannelFinancialRecords(100, 100, 0, "", nil)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	assert.Equal(t, 1.0, rows[0].CostRate)
+	assert.Zero(t, rows[0].CostRateVersionId)
+	assert.Equal(t, 0.001, rows[0].BaseCostUSD)
+	assert.Equal(t, 0.001, rows[0].ChannelCostUSD)
 }
 
 func TestHistoricalFinancialRecordsSkipExactRowsWithoutRequestID(t *testing.T) {

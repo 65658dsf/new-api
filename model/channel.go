@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -472,6 +473,7 @@ func BatchInsertChannels(channels []Channel) error {
 			return err
 		}
 		for _, i := range zeroCostRateIndexes {
+			chunk[i].CostRate = 0
 			if err := tx.Model(&Channel{}).Where("id = ?", chunk[i].Id).Update("cost_rate", 0).Error; err != nil {
 				tx.Rollback()
 				return err
@@ -479,6 +481,12 @@ func BatchInsertChannels(channels []Channel) error {
 		}
 		for _, channel_ := range chunk {
 			if err := channel_.AddAbilities(tx); err != nil {
+				tx.Rollback()
+				return err
+			}
+		}
+		for i := range chunk {
+			if _, err := appendChannelCostRateVersion(tx, chunk[i].Id, chunk[i].CostRate, time.Now().UnixNano()); err != nil {
 				tx.Rollback()
 				return err
 			}
@@ -555,20 +563,23 @@ func (channel *Channel) GetStatusCodeMapping() string {
 }
 
 func (channel *Channel) Insert() error {
-	var err error
 	zeroCostRate := channel.CostRate == 0
-	err = DB.Create(channel).Error
-	if err != nil {
-		return err
-	}
-	if zeroCostRate {
-		channel.CostRate = 0
-		if err := DB.Model(channel).Update("cost_rate", 0).Error; err != nil {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(channel).Error; err != nil {
 			return err
 		}
-	}
-	err = channel.AddAbilities(nil)
-	return err
+		if zeroCostRate {
+			channel.CostRate = 0
+			if err := tx.Model(channel).Update("cost_rate", 0).Error; err != nil {
+				return err
+			}
+		}
+		if err := channel.AddAbilities(tx); err != nil {
+			return err
+		}
+		_, err := appendChannelCostRateVersion(tx, channel.Id, channel.CostRate, time.Now().UnixNano())
+		return err
+	})
 }
 
 func (channel *Channel) Update(fields ...string) error {
@@ -610,20 +621,35 @@ func (channel *Channel) Update(fields ...string) error {
 			}
 		}
 	}
-	var err error
-	query := DB.Model(channel)
-	err = query.Updates(channel).Error
-	if err != nil {
-		return err
-	}
-	if len(fields) > 0 {
-		if err := DB.Model(channel).Select(fields).Updates(channel).Error; err != nil {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var origin Channel
+		if err := lockForUpdate(tx).Select("id", "cost_rate").First(&origin, "id = ?", channel.Id).Error; err != nil {
 			return err
 		}
-	}
-	DB.Model(channel).First(channel, "id = ?", channel.Id)
-	err = channel.UpdateAbilities(nil)
-	return err
+		if err := tx.Model(channel).Updates(channel).Error; err != nil {
+			return err
+		}
+		if len(fields) > 0 {
+			if err := tx.Model(channel).Select(fields).Updates(channel).Error; err != nil {
+				return err
+			}
+		}
+		if err := tx.First(channel, "id = ?", channel.Id).Error; err != nil {
+			return err
+		}
+		if err := channel.UpdateAbilities(tx); err != nil {
+			return err
+		}
+		if channel.CostRate != origin.CostRate {
+			if err := ensureChannelCostRateVersionBaseline(tx, &origin); err != nil {
+				return err
+			}
+			if _, err := appendChannelCostRateVersion(tx, channel.Id, channel.CostRate, time.Now().UnixNano()); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func (channel *Channel) UpdateResponseTime(responseTime int64) {

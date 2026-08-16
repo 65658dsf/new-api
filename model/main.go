@@ -297,12 +297,16 @@ func migrateDB() error {
 		&SystemTaskLock{},
 		&CasbinRule{},
 		&AuthzRole{},
+		&ChannelCostRateVersion{},
 		&ChannelFinancialRecord{},
 	)
 	if err != nil {
 		return err
 	}
 	if err := InitializeChannelCostRates(); err != nil {
+		return err
+	}
+	if err := InitializeChannelCostRateVersions(); err != nil {
 		return err
 	}
 	if err := InitializeChannelFinancialLaunchTime(); err != nil {
@@ -370,6 +374,7 @@ func migrateDBFast() error {
 		{&SystemInstance{}, "SystemInstance"},
 		{&SystemTask{}, "SystemTask"},
 		{&SystemTaskLock{}, "SystemTaskLock"},
+		{&ChannelCostRateVersion{}, "ChannelCostRateVersion"},
 		{&ChannelFinancialRecord{}, "ChannelFinancialRecord"},
 	}
 	// 动态计算migration数量，确保errChan缓冲区足够大
@@ -396,6 +401,9 @@ func migrateDBFast() error {
 		}
 	}
 	if err := InitializeChannelCostRates(); err != nil {
+		return err
+	}
+	if err := InitializeChannelCostRateVersions(); err != nil {
 		return err
 	}
 	if err := InitializeChannelFinancialLaunchTime(); err != nil {

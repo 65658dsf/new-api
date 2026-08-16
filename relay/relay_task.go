@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -99,7 +100,18 @@ func ResolveOriginTask(c *gin.Context, info *relaycommon.RelayInfo) *dto.TaskErr
 		common.SetContextKey(c, constant.ContextKeyChannelBaseUrl, ch.GetBaseURL())
 		common.SetContextKey(c, constant.ContextKeyChannelId, originTask.ChannelId)
 		common.SetContextKey(c, constant.ContextKeyChannelName, ch.Name)
-		common.SetContextKey(c, constant.ContextKeyChannelCostRate, ch.CostRate)
+		requestStartTime := common.GetContextKeyTime(c, constant.ContextKeyRequestStartTime)
+		if requestStartTime.IsZero() {
+			requestStartTime = time.Now()
+			common.SetContextKey(c, constant.ContextKeyRequestStartTime, requestStartTime)
+		}
+		costRateSnapshot, err := model.GetChannelCostRateSnapshotAt(ch.Id, requestStartTime, ch.CostRate)
+		if err != nil {
+			common.SysError(fmt.Sprintf("failed to resolve channel cost rate: channel_id=%d, error=%v", ch.Id, err))
+		}
+		common.SetContextKey(c, constant.ContextKeyChannelCostRate, costRateSnapshot.CostRate)
+		common.SetContextKey(c, constant.ContextKeyChannelCostRateVersionId, costRateSnapshot.VersionId)
+		common.SetContextKey(c, constant.ContextKeyChannelCostRateEffectiveAt, costRateSnapshot.EffectiveAt)
 
 		info.ChannelBaseUrl = ch.GetBaseURL()
 		info.ChannelId = originTask.ChannelId

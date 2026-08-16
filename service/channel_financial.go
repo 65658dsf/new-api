@@ -2,6 +2,7 @@ package service
 
 import (
 	"math"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -41,7 +42,8 @@ func recordChannelFinancialConsume(ctx *gin.Context, relayInfo *relaycommon.Rela
 		!isFiniteNonNegative(common.QuotaPerUnit) || common.QuotaPerUnit <= 0 {
 		return
 	}
-	if relayInfo.ChannelCostRate < 0 || math.IsNaN(relayInfo.ChannelCostRate) || math.IsInf(relayInfo.ChannelCostRate, 0) {
+	costRate := relayInfo.ChannelCostRate
+	if costRate < 0 || math.IsNaN(costRate) || math.IsInf(costRate, 0) {
 		return
 	}
 	if quota < 0 {
@@ -49,7 +51,7 @@ func recordChannelFinancialConsume(ctx *gin.Context, relayInfo *relaycommon.Rela
 	}
 	baseQuota, covered := financialBaseQuota(quota, relayInfo.PriceData, baseQuotaBeforeGroup)
 	baseCostUSD := baseQuota / common.QuotaPerUnit
-	channelCostUSD := baseCostUSD * relayInfo.ChannelCostRate
+	channelCostUSD := baseCostUSD * costRate
 	revenueUSD := float64(quota) / common.QuotaPerUnit
 	if !isFiniteNonNegative(revenueUSD) {
 		revenueUSD = 0
@@ -67,20 +69,22 @@ func recordChannelFinancialConsume(ctx *gin.Context, relayInfo *relaycommon.Rela
 		}
 	}
 	record := &model.ChannelFinancialRecord{
-		CreatedAt:      financialRequestTimestamp(relayInfo),
-		EventType:      model.FinancialEventConsume,
-		RequestId:      requestID,
-		ReferenceId:    referenceID,
-		ChannelId:      relayInfo.ChannelId,
-		ChannelName:    relayInfo.ChannelName,
-		ModelName:      modelName,
-		CostRate:       relayInfo.ChannelCostRate,
-		RevenueUSD:     revenueUSD,
-		BaseCostUSD:    baseCostUSD,
-		ChannelCostUSD: channelCostUSD,
-		Quota:          quota,
-		QuotaPerUnit:   common.QuotaPerUnit,
-		Covered:        covered,
+		CreatedAt:           financialRequestTimestamp(relayInfo),
+		EventType:           model.FinancialEventConsume,
+		RequestId:           requestID,
+		ReferenceId:         referenceID,
+		ChannelId:           relayInfo.ChannelId,
+		ChannelName:         relayInfo.ChannelName,
+		ModelName:           modelName,
+		CostRate:            costRate,
+		CostRateVersionId:   relayInfo.ChannelCostRateVersionId,
+		CostRateEffectiveAt: relayInfo.ChannelCostRateEffectiveAt,
+		RevenueUSD:          revenueUSD,
+		BaseCostUSD:         baseCostUSD,
+		ChannelCostUSD:      channelCostUSD,
+		Quota:               quota,
+		QuotaPerUnit:        common.QuotaPerUnit,
+		Covered:             covered,
 	}
 	if err := model.CreateChannelFinancialRecord(record); err != nil {
 		common.SysError("failed to record channel financial consume: " + err.Error())
@@ -104,22 +108,39 @@ func RecordChannelFinancialTaskAdjustment(task *model.Task, eventType string, qu
 	}
 	groupRatio := 0.0
 	quotaPerUnit := common.QuotaPerUnit
+	costRate := channel.CostRate
+	costRateVersionID := int64(0)
+	costRateEffectiveAt := int64(0)
+	costRateSnapshotSet := false
 	if task.PrivateData.BillingContext != nil {
 		groupRatio = task.PrivateData.BillingContext.GroupRatio
 		if task.PrivateData.BillingContext.ChannelName != "" {
 			channel.Name = task.PrivateData.BillingContext.ChannelName
 		}
 		if task.PrivateData.BillingContext.ChannelCostRateSet {
-			channel.CostRate = task.PrivateData.BillingContext.ChannelCostRate
+			costRate = task.PrivateData.BillingContext.ChannelCostRate
+			costRateVersionID = task.PrivateData.BillingContext.ChannelCostRateVersionId
+			costRateEffectiveAt = task.PrivateData.BillingContext.ChannelCostRateEffectiveAt
+			costRateSnapshotSet = true
 		}
 		if task.PrivateData.BillingContext.QuotaPerUnit > 0 {
 			quotaPerUnit = task.PrivateData.BillingContext.QuotaPerUnit
 		}
 	}
+	if !costRateSnapshotSet && task.SubmitTime > 0 {
+		resolvedSnapshot, err := model.GetChannelCostRateSnapshotAt(task.ChannelId, time.Unix(task.SubmitTime, 0), costRate)
+		if err != nil {
+			common.SysError("failed to resolve task channel financial cost rate: " + err.Error())
+		} else {
+			costRate = resolvedSnapshot.CostRate
+			costRateVersionID = resolvedSnapshot.VersionId
+			costRateEffectiveAt = resolvedSnapshot.EffectiveAt
+		}
+	}
 	if !isFiniteNonNegative(quotaPerUnit) || quotaPerUnit <= 0 {
 		return
 	}
-	if channel.CostRate < 0 || math.IsNaN(channel.CostRate) || math.IsInf(channel.CostRate, 0) {
+	if costRate < 0 || math.IsNaN(costRate) || math.IsInf(costRate, 0) {
 		return
 	}
 	baseQuota := 0.0
@@ -144,25 +165,27 @@ func RecordChannelFinancialTaskAdjustment(task *model.Task, eventType string, qu
 		baseQuota = 0
 	}
 	baseCostUSD := baseQuota / quotaPerUnit
-	channelCostUSD := baseCostUSD * channel.CostRate
+	channelCostUSD := baseCostUSD * costRate
 	if !covered || !isFiniteNonNegative(baseCostUSD) || !isFiniteNonNegative(channelCostUSD) {
 		baseCostUSD = 0
 		channelCostUSD = 0
 		covered = false
 	}
 	record := &model.ChannelFinancialRecord{
-		EventType:      eventType,
-		RequestId:      task.TaskID,
-		ChannelId:      task.ChannelId,
-		ChannelName:    channel.Name,
-		ModelName:      taskModelName(task),
-		CostRate:       channel.CostRate,
-		RevenueUSD:     revenueUSD,
-		BaseCostUSD:    baseCostUSD,
-		ChannelCostUSD: channelCostUSD,
-		Quota:          quota,
-		QuotaPerUnit:   quotaPerUnit,
-		Covered:        covered,
+		EventType:           eventType,
+		RequestId:           task.TaskID,
+		ChannelId:           task.ChannelId,
+		ChannelName:         channel.Name,
+		ModelName:           taskModelName(task),
+		CostRate:            costRate,
+		CostRateVersionId:   costRateVersionID,
+		CostRateEffectiveAt: costRateEffectiveAt,
+		RevenueUSD:          revenueUSD,
+		BaseCostUSD:         baseCostUSD,
+		ChannelCostUSD:      channelCostUSD,
+		Quota:               quota,
+		QuotaPerUnit:        quotaPerUnit,
+		Covered:             covered,
 	}
 	if err := model.CreateChannelFinancialRecord(record); err != nil {
 		common.SysError("failed to record channel financial task adjustment: " + err.Error())
@@ -178,14 +201,25 @@ func RecordChannelFinancialRefund(requestID string, channelID int, modelName str
 		quotaPerUnit = common.QuotaPerUnit
 	}
 	channel := &model.Channel{Id: channelID, CostRate: 1}
+	costRateVersionID := int64(0)
+	costRateEffectiveAt := int64(0)
 	if snapshot, err := getFinancialConsumeSnapshot(requestID, channelID, modelName); err == nil {
 		channel.Name = snapshot.ChannelName
 		channel.CostRate = snapshot.CostRate
+		costRateVersionID = snapshot.CostRateVersionId
+		costRateEffectiveAt = snapshot.CostRateEffectiveAt
 		if isFiniteNonNegative(snapshot.QuotaPerUnit) && snapshot.QuotaPerUnit > 0 {
 			quotaPerUnit = snapshot.QuotaPerUnit
 		}
 	} else if current, err := model.GetChannelById(channelID, false); err == nil {
 		channel = current
+		if rateSnapshot, resolveErr := model.GetCurrentChannelCostRateSnapshot(channelID, current.CostRate); resolveErr != nil {
+			common.SysError("failed to resolve refund channel financial cost rate: " + resolveErr.Error())
+		} else {
+			channel.CostRate = rateSnapshot.CostRate
+			costRateVersionID = rateSnapshot.VersionId
+			costRateEffectiveAt = rateSnapshot.EffectiveAt
+		}
 	}
 	if !isFiniteNonNegative(quotaPerUnit) || quotaPerUnit <= 0 {
 		return
@@ -198,16 +232,18 @@ func RecordChannelFinancialRefund(requestID string, channelID int, modelName str
 		return
 	}
 	record := &model.ChannelFinancialRecord{
-		EventType:    model.FinancialEventRefund,
-		RequestId:    requestID,
-		ChannelId:    channelID,
-		ChannelName:  channel.Name,
-		ModelName:    modelName,
-		CostRate:     channel.CostRate,
-		RevenueUSD:   -revenueUSD,
-		Quota:        quota,
-		QuotaPerUnit: quotaPerUnit,
-		Covered:      true,
+		EventType:           model.FinancialEventRefund,
+		RequestId:           requestID,
+		ChannelId:           channelID,
+		ChannelName:         channel.Name,
+		ModelName:           modelName,
+		CostRate:            channel.CostRate,
+		CostRateVersionId:   costRateVersionID,
+		CostRateEffectiveAt: costRateEffectiveAt,
+		RevenueUSD:          -revenueUSD,
+		Quota:               quota,
+		QuotaPerUnit:        quotaPerUnit,
+		Covered:             true,
 	}
 	if err := model.CreateChannelFinancialRecord(record); err != nil {
 		common.SysError("failed to record channel financial refund: " + err.Error())
