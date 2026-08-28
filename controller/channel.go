@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -476,8 +475,8 @@ func validateChannel(channel *model.Channel, isAdd bool) error {
 	if channel == nil {
 		return fmt.Errorf("channel cannot be empty")
 	}
-	if math.IsNaN(channel.CostRate) || math.IsInf(channel.CostRate, 0) || channel.CostRate < 0 {
-		return fmt.Errorf("channel cost rate must be a non-negative finite number")
+	if err := model.ValidateChannelCostRate(channel.CostRate); err != nil {
+		return err
 	}
 
 	// 校验 channel settings

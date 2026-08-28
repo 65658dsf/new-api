@@ -43,7 +43,7 @@ func recordChannelFinancialConsume(ctx *gin.Context, relayInfo *relaycommon.Rela
 		return
 	}
 	costRate := relayInfo.ChannelCostRate
-	if costRate < 0 || math.IsNaN(costRate) || math.IsInf(costRate, 0) {
+	if !model.IsValidChannelCostRate(costRate) {
 		return
 	}
 	if quota < 0 {
@@ -140,7 +140,7 @@ func RecordChannelFinancialTaskAdjustment(task *model.Task, eventType string, qu
 	if !isFiniteNonNegative(quotaPerUnit) || quotaPerUnit <= 0 {
 		return
 	}
-	if costRate < 0 || math.IsNaN(costRate) || math.IsInf(costRate, 0) {
+	if !model.IsValidChannelCostRate(costRate) {
 		return
 	}
 	baseQuota := 0.0
@@ -224,7 +224,7 @@ func RecordChannelFinancialRefund(requestID string, channelID int, modelName str
 	if !isFiniteNonNegative(quotaPerUnit) || quotaPerUnit <= 0 {
 		return
 	}
-	if channel.CostRate < 0 || math.IsNaN(channel.CostRate) || math.IsInf(channel.CostRate, 0) {
+	if !model.IsValidChannelCostRate(channel.CostRate) {
 		return
 	}
 	revenueUSD := float64(quota) / quotaPerUnit

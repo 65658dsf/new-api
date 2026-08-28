@@ -96,7 +96,9 @@ func TestValidateChannelCostRate(t *testing.T) {
 	}{
 		{name: "default", costRate: 1},
 		{name: "zero", costRate: 0},
+		{name: "fine grained positive", costRate: 0.005},
 		{name: "greater than one", costRate: 2.5},
+		{name: "large finite value", costRate: math.MaxFloat64},
 		{name: "negative", costRate: -0.1, wantErr: true},
 		{name: "nan", costRate: math.NaN(), wantErr: true},
 		{name: "positive infinity", costRate: math.Inf(1), wantErr: true},

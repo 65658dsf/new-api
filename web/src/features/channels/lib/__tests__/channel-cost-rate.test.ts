@@ -38,10 +38,15 @@ function validForm(costRate: number) {
 }
 
 describe('channel cost rate', () => {
-  test('defaults to one and accepts zero or values above one', () => {
+  test('defaults to one and accepts zero or fine-grained positive rates without an upper bound', () => {
     assert.equal(CHANNEL_FORM_DEFAULT_VALUES.cost_rate, 1)
     assert.equal(channelFormSchema.safeParse(validForm(0)).success, true)
+    assert.equal(channelFormSchema.safeParse(validForm(0.005)).success, true)
     assert.equal(channelFormSchema.safeParse(validForm(1.25)).success, true)
+    assert.equal(
+      channelFormSchema.safeParse(validForm(Number.MAX_VALUE)).success,
+      true
+    )
   })
 
   test('rejects negative and non-finite values', () => {

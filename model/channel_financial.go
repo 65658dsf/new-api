@@ -78,7 +78,7 @@ func GetChannelFinancialLaunchTime() int64 {
 // BeforeCreate rejects invalid snapshots without changing an explicit zero
 // rate, which is a valid administrator configuration.
 func (r *ChannelFinancialRecord) BeforeCreate(tx *gorm.DB) error {
-	if r.CostRate < 0 || math.IsNaN(r.CostRate) || math.IsInf(r.CostRate, 0) {
+	if !IsValidChannelCostRate(r.CostRate) {
 		return errors.New("channel financial cost rate must be a non-negative finite number")
 	}
 	if r.CostRateVersionId < 0 || r.CostRateEffectiveAt < 0 {

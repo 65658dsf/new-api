@@ -47,6 +47,23 @@ func isValidChannelCostRate(rate float64) bool {
 	return rate >= 0 && !math.IsNaN(rate) && !math.IsInf(rate, 0)
 }
 
+// IsValidChannelCostRate reports whether a configured rate is finite and
+// non-negative. There is deliberately no upper bound on this multiplier.
+func IsValidChannelCostRate(rate float64) bool {
+	return isValidChannelCostRate(rate)
+}
+
+// ValidateChannelCostRate validates an administrator-configured cost rate.
+// The rate is a multiplier and intentionally has no upper bound; the only
+// invalid values are negative, NaN, and infinities. Zero remains valid for
+// backwards compatibility with channels configured without upstream cost.
+func ValidateChannelCostRate(rate float64) error {
+	if !isValidChannelCostRate(rate) {
+		return errors.New("channel cost rate must be a non-negative finite number")
+	}
+	return nil
+}
+
 func normalizedChannelCostRate(rate float64) float64 {
 	if !isValidChannelCostRate(rate) {
 		return 1
