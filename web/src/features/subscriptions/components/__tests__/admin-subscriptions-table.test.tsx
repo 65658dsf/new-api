@@ -87,7 +87,13 @@ type ApiGet = (
   url: string,
   config?: { params?: Record<string, unknown> }
 ) => Promise<{ data: unknown }>
-type MockableApi = { get: ApiGet }
+type ApiMutation = (url: string, data?: unknown) => Promise<{ data: unknown }>
+type MockableApi = {
+  get: ApiGet
+  patch: ApiMutation
+  post: ApiMutation
+  delete: ApiMutation
+}
 type RenderedTable = {
   footer: HTMLDivElement
   host: HTMLDivElement
@@ -97,8 +103,16 @@ type RenderedTable = {
 
 const apiClient = api as unknown as MockableApi
 const originalGet = apiClient.get
+const originalPatch = apiClient.patch
+const originalPost = apiClient.post
+const originalDelete = apiClient.delete
 let renderedTable: RenderedTable | null = null
 let requests: Array<Record<string, unknown>> = []
+let mutationRequests: Array<{
+  method: 'patch' | 'post' | 'delete'
+  url: string
+  data?: unknown
+}> = []
 
 const aliceRecord = {
   subscription: {
@@ -123,6 +137,30 @@ const aliceRecord = {
   plan: { id: 20, title: 'Starter Plan' },
 }
 
+const expiredRecord = {
+  ...aliceRecord,
+  subscription: {
+    ...aliceRecord.subscription,
+    id: 3,
+    status: 'expired',
+    end_time: Math.floor(Date.now() / 1000) - 3_600,
+  },
+  user: {
+    ...aliceRecord.user,
+    id: 12,
+    username: 'expired',
+    display_name: 'Expired User',
+  },
+}
+
+const elapsedActiveRecord = {
+  ...expiredRecord,
+  subscription: {
+    ...expiredRecord.subscription,
+    status: 'active',
+  },
+}
+
 const bobRecord = {
   ...aliceRecord,
   subscription: { ...aliceRecord.subscription, id: 2, user_id: 11 },
@@ -143,9 +181,13 @@ function response(items: unknown[], page: number) {
   }
 }
 
-function installApiFixtures() {
+function installApiFixtures(items: unknown[] = [aliceRecord]) {
   requests = []
+  mutationRequests = []
   apiClient.get = async (url, config) => {
+    if (url === '/api/group') {
+      return { data: { success: true, data: ['group-a', 'group-b'] } }
+    }
     assert.equal(url, '/api/subscription/admin/subscriptions')
     const params = config?.params || {}
     requests.push(
@@ -154,7 +196,19 @@ function installApiFixtures() {
       )
     )
     if (params.keyword === 'Bob') return response([bobRecord], 1)
-    return response([aliceRecord], Number(params.p || 1))
+    return response(items, Number(params.p || 1))
+  }
+  apiClient.patch = async (url, data) => {
+    mutationRequests.push({ method: 'patch', url, data })
+    return { data: { success: true, data: {} } }
+  }
+  apiClient.post = async (url, data) => {
+    mutationRequests.push({ method: 'post', url, data })
+    return { data: { success: true, data: {} } }
+  }
+  apiClient.delete = async (url, data) => {
+    mutationRequests.push({ method: 'delete', url, data })
+    return { data: { success: true, data: {} } }
   }
 }
 
@@ -232,6 +286,9 @@ async function changeInput(input: HTMLInputElement, value: string) {
 
 afterEach(async () => {
   apiClient.get = originalGet
+  apiClient.patch = originalPatch
+  apiClient.post = originalPost
+  apiClient.delete = originalDelete
   if (renderedTable) {
     await act(async () => renderedTable?.root.unmount())
     renderedTable.queryClient.clear()
@@ -303,5 +360,243 @@ describe('admin subscriptions table', () => {
       )
     )
     assert.equal(requests.at(-1)?.p, 2)
+  })
+
+  test('shows reset, modify, and delete actions in each subscription row menu', async () => {
+    installApiFixtures()
+    await renderTable()
+
+    const actionsTrigger = document.querySelector<HTMLButtonElement>(
+      'button[aria-label="Actions"]'
+    )
+    assert.ok(actionsTrigger)
+    assert.equal(actionsTrigger.textContent?.trim(), 'Actions')
+
+    await act(async () => actionsTrigger.click())
+    await act(async () =>
+      waitForCondition(
+        () =>
+          document.body.textContent?.includes('Reset quota') === true &&
+          document.body.textContent?.includes('Modify subscription') === true &&
+          document.body.textContent?.includes('Delete subscription') === true,
+        'subscription action menu did not open'
+      )
+    )
+
+    assert.equal(document.body.textContent?.includes('Reset quota'), true)
+    assert.equal(
+      document.body.textContent?.includes('Modify subscription'),
+      true
+    )
+    assert.equal(
+      document.body.textContent?.includes('Delete subscription'),
+      true
+    )
+  })
+
+  test('keeps actions as the last table column and exposes an action label', async () => {
+    installApiFixtures()
+    await renderTable()
+
+    const headers = [
+      ...document.querySelectorAll<HTMLElement>('[data-column-id]'),
+    ]
+    assert.equal(headers.at(-1)?.dataset.columnId, 'actions')
+    assert.equal(
+      document
+        .querySelector<HTMLButtonElement>('button[aria-label="Actions"]')
+        ?.textContent?.trim(),
+      'Actions'
+    )
+  })
+
+  test('opens the edit drawer from the modify action', async () => {
+    installApiFixtures()
+    await renderTable()
+
+    const trigger = document.querySelector<HTMLButtonElement>(
+      'button[aria-label="Actions"]'
+    )
+    assert.ok(trigger)
+    await act(async () => trigger.click())
+    const item = [
+      ...document.querySelectorAll<HTMLElement>(
+        '[data-slot="dropdown-menu-item"]'
+      ),
+    ].find((element) => element.textContent?.includes('Modify subscription'))
+    assert.ok(item)
+    await act(async () => item.click())
+    await act(async () =>
+      waitForCondition(
+        () =>
+          document.body.textContent?.includes(
+            'Changes apply only to this subscription instance'
+          ) === true,
+        'edit drawer did not open'
+      )
+    )
+    assert.equal(
+      document.body.textContent?.includes('Modify subscription'),
+      true
+    )
+  })
+
+  test('shows the persisted status when an active subscription window has elapsed', async () => {
+    installApiFixtures([elapsedActiveRecord])
+    await renderTable()
+
+    const trigger = document.querySelector<HTMLButtonElement>(
+      'button[aria-label="Actions"]'
+    )
+    assert.ok(trigger)
+    await act(async () => trigger.click())
+    const item = [
+      ...document.querySelectorAll<HTMLElement>(
+        '[data-slot="dropdown-menu-item"]'
+      ),
+    ].find((element) => element.textContent?.includes('Modify subscription'))
+    assert.ok(item)
+    await act(async () => item.click())
+    await act(async () =>
+      waitForCondition(
+        () =>
+          document
+            .querySelector<HTMLButtonElement>(
+              '#admin-subscription-form [data-slot="select-trigger"]'
+            )
+            ?.textContent?.trim() === 'Active',
+        'edit form did not preserve the stored subscription status'
+      )
+    )
+  })
+
+  test('opens reset and delete confirmations from the action menu', async () => {
+    installApiFixtures()
+    await renderTable()
+
+    const trigger = document.querySelector<HTMLButtonElement>(
+      'button[aria-label="Actions"]'
+    )
+    assert.ok(trigger)
+    await act(async () => trigger.click())
+    const resetItem = [
+      ...document.querySelectorAll<HTMLElement>(
+        '[data-slot="dropdown-menu-item"]'
+      ),
+    ].find((element) => element.textContent?.includes('Reset quota'))
+    assert.ok(resetItem)
+    await act(async () => resetItem.click())
+    await act(async () =>
+      waitForCondition(
+        () =>
+          document.body.textContent?.includes('Reset subscription quota') ===
+          true,
+        'reset confirmation did not open'
+      )
+    )
+    assert.equal(
+      document.body.textContent?.includes(
+        "Reset this subscription's used quota"
+      ),
+      true
+    )
+
+    const cancel = [
+      ...document.querySelectorAll<HTMLButtonElement>('button'),
+    ].find((button) => button.textContent?.trim() === 'Cancel')
+    assert.ok(cancel)
+    await act(async () => cancel.click())
+
+    await act(async () => trigger.click())
+    const deleteItem = [
+      ...document.querySelectorAll<HTMLElement>(
+        '[data-slot="dropdown-menu-item"]'
+      ),
+    ].find((element) => element.textContent?.includes('Delete subscription'))
+    assert.ok(deleteItem)
+    await act(async () => deleteItem.click())
+    await act(async () =>
+      waitForCondition(
+        () => document.body.textContent?.includes('Confirm delete') === true,
+        'delete confirmation did not open'
+      )
+    )
+    assert.equal(
+      document.body.textContent?.includes(
+        'This removes the subscription from normal views but keeps its billing record'
+      ),
+      true
+    )
+  })
+
+  test('disables reset for an expired subscription', async () => {
+    installApiFixtures([expiredRecord])
+    await renderTable()
+
+    const trigger = document.querySelector<HTMLButtonElement>(
+      'button[aria-label="Actions"]'
+    )
+    assert.ok(trigger)
+    await act(async () => trigger.click())
+    const resetItem = [
+      ...document.querySelectorAll<HTMLElement>(
+        '[data-slot="dropdown-menu-item"]'
+      ),
+    ].find((element) => element.textContent?.includes('Reset quota'))
+    assert.ok(resetItem)
+    assert.equal(
+      resetItem.getAttribute('aria-disabled') === 'true' ||
+        resetItem.hasAttribute('data-disabled'),
+      true
+    )
+  })
+
+  test('sends only changed fields when saving an edited quota', async () => {
+    installApiFixtures()
+    await renderTable()
+
+    const trigger = document.querySelector<HTMLButtonElement>(
+      'button[aria-label="Actions"]'
+    )
+    assert.ok(trigger)
+    await act(async () => trigger.click())
+    const item = [
+      ...document.querySelectorAll<HTMLElement>(
+        '[data-slot="dropdown-menu-item"]'
+      ),
+    ].find((element) => element.textContent?.includes('Modify subscription'))
+    assert.ok(item)
+    await act(async () => item.click())
+    await act(async () =>
+      waitForCondition(
+        () =>
+          document.querySelector<HTMLInputElement>(
+            '#admin-subscription-form input[type="number"]'
+          )?.value === '0.001',
+        'edit form did not open'
+      )
+    )
+
+    const quotaInput = document.querySelector<HTMLInputElement>(
+      '#admin-subscription-form input[type="number"]'
+    )
+    assert.ok(quotaInput)
+    await changeInput(quotaInput, '2')
+    const saveButton = document.querySelector<HTMLButtonElement>(
+      'button[form="admin-subscription-form"]'
+    )
+    assert.ok(saveButton)
+    await act(async () => saveButton.click())
+    await act(async () =>
+      waitForCondition(
+        () => mutationRequests.some((request) => request.method === 'patch'),
+        'subscription update request was not sent'
+      )
+    )
+    assert.deepEqual(mutationRequests.at(-1), {
+      method: 'patch',
+      url: '/api/subscription/admin/user_subscriptions/1',
+      data: { amount_total: 2_000_000 },
+    })
   })
 })

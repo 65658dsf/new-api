@@ -47,6 +47,13 @@ func (s *BillingSession) Settle(actualQuota int) error {
 	}
 	delta := actualQuota - s.preConsumedQuota
 	if delta == 0 {
+		// 订阅预扣记录在零差额结算时也必须进入 settled；钱包没有对应的幂等记录。
+		if s.funding.Source() == BillingSourceSubscription && !s.fundingSettled {
+			if err := s.funding.Settle(0); err != nil {
+				return err
+			}
+			s.fundingSettled = true
+		}
 		s.settled = true
 		return nil
 	}

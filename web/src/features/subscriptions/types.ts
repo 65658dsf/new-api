@@ -68,6 +68,12 @@ export const userSubscriptionSchema = z.object({
   amount_total: z.number(),
   amount_used: z.number(),
   next_reset_time: z.number().optional(),
+  last_reset_time: z.number().optional(),
+  quota_reset_period: z.string().optional(),
+  quota_reset_custom_seconds: z.number().optional(),
+  upgrade_group: z.string().optional(),
+  downgrade_group: z.string().optional(),
+  allow_wallet_overflow: z.boolean().optional(),
   billing_group: z.string().optional(),
   created_at: z.number().optional(),
   updated_at: z.number().optional(),
@@ -90,6 +96,8 @@ export interface AdminSubscriptionRecord {
   plan?: {
     id: number
     title: string
+    quota_reset_period?: string
+    quota_reset_custom_seconds?: number
   }
 }
 
@@ -152,6 +160,23 @@ export interface SubscriptionPayResponse {
 
 export interface CreateUserSubscriptionRequest {
   plan_id: number
+}
+
+export interface AdminUpdateUserSubscriptionRequest {
+  amount_total?: number
+  start_time?: number
+  end_time?: number
+  status?: string
+  allow_wallet_overflow?: boolean
+  upgrade_group?: string
+  downgrade_group?: string
+  billing_group?: string
+  quota_reset_period?: string
+  quota_reset_custom_seconds?: number
+}
+
+export interface ResetUserSubscriptionRequest {
+  advance_reset_time?: boolean
 }
 
 export interface ResetUserSubscriptionsRequest {

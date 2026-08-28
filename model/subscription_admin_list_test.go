@@ -29,7 +29,12 @@ func TestListAdminSubscriptionsReturnsSubscriberPlanAndQuota(t *testing.T) {
 	require.NoError(t, DB.Create(alice).Error)
 	require.NoError(t, DB.Create(bob).Error)
 
-	pro := &SubscriptionPlan{Id: 9801, Title: "Admin List Pro"}
+	pro := &SubscriptionPlan{
+		Id:                      9801,
+		Title:                   "Admin List Pro",
+		QuotaResetPeriod:        SubscriptionResetCustom,
+		QuotaResetCustomSeconds: 7200,
+	}
 	basic := &SubscriptionPlan{Id: 9802, Title: "Admin List Basic"}
 	require.NoError(t, DB.Create(pro).Error)
 	require.NoError(t, DB.Create(basic).Error)
@@ -88,6 +93,8 @@ func TestListAdminSubscriptionsReturnsSubscriberPlanAndQuota(t *testing.T) {
 	require.NotNil(t, item.Plan)
 	assert.Equal(t, pro.Id, item.Plan.Id)
 	assert.Equal(t, pro.Title, item.Plan.Title)
+	assert.Equal(t, SubscriptionResetCustom, item.Plan.QuotaResetPeriod)
+	assert.EqualValues(t, 7200, item.Plan.QuotaResetCustomSeconds)
 
 	items, total, err = ListAdminSubscriptions(&common.PageInfo{Page: 1, PageSize: 2}, AdminSubscriptionQueryOptions{})
 	require.NoError(t, err)

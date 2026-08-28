@@ -46,6 +46,11 @@ interface DateTimePickerProps {
   onChange?: (date: Date | undefined) => void
   placeholder?: string
   className?: string
+  id?: string
+  'aria-describedby'?: string
+  'aria-invalid'?: boolean
+  'data-form-root'?: string
+  'data-slot'?: string
 }
 
 export function DateTimePicker({
@@ -53,6 +58,7 @@ export function DateTimePicker({
   onChange,
   placeholder,
   className,
+  ...triggerProps
 }: DateTimePickerProps) {
   const { t, i18n } = useTranslation()
   const placeholderText = placeholder ?? t('Select date')
@@ -121,6 +127,7 @@ export function DateTimePicker({
                 'flex-1 justify-between font-normal',
                 !date && 'text-muted-foreground'
               )}
+              {...triggerProps}
             />
           }
         >
@@ -147,6 +154,9 @@ export function DateTimePicker({
         onChange={handleTimeChange}
         className='w-32 appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none'
         disabled={!date}
+        aria-label={t('Time')}
+        aria-describedby={triggerProps['aria-describedby']}
+        aria-invalid={triggerProps['aria-invalid']}
       />
       {date && (
         <Button
@@ -155,7 +165,7 @@ export function DateTimePicker({
           size='icon'
           onClick={handleClear}
           className='shrink-0'
-          aria-label='Clear'
+          aria-label={t('Clear')}
         >
           <span aria-hidden='true'>✕</span>
         </Button>

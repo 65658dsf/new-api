@@ -1,7 +1,9 @@
 package controller
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 
@@ -442,6 +444,10 @@ type AdminCreateUserSubscriptionRequest struct {
 	PlanId int `json:"plan_id"`
 }
 
+type AdminResetUserSubscriptionRequest struct {
+	AdvanceResetTime *bool `json:"advance_reset_time"`
+}
+
 type AdminResetSubscriptionRequest struct {
 	PlanId           int   `json:"plan_id"`
 	AdvanceResetTime *bool `json:"advance_reset_time"`
@@ -574,11 +580,16 @@ func AdminInvalidateUserSubscription(c *gin.Context) {
 	common.ApiSuccess(c, nil)
 }
 
-// AdminDeleteUserSubscription hard-deletes a user subscription.
+// AdminDeleteUserSubscription removes a user subscription from normal views.
 func AdminDeleteUserSubscription(c *gin.Context) {
 	subId, _ := strconv.Atoi(c.Param("id"))
 	if subId <= 0 {
 		common.ApiErrorMsg(c, "无效的订阅ID")
+		return
+	}
+	subscription, err := model.GetUserSubscriptionById(subId)
+	if err != nil {
+		common.ApiError(c, err)
 		return
 	}
 	msg, err := model.AdminDeleteUserSubscription(subId)
@@ -586,9 +597,119 @@ func AdminDeleteUserSubscription(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	recordManageAuditFor(c, subscription.UserId, "subscription.user_delete", map[string]interface{}{
+		"subscription_id": subId,
+		"target_user_id":  subscription.UserId,
+	})
 	if msg != "" {
 		common.ApiSuccess(c, gin.H{"message": msg})
 		return
 	}
 	common.ApiSuccess(c, nil)
+}
+
+// AdminUpdateUserSubscription updates only one granted subscription instance;
+// the source plan remains unchanged.
+func AdminUpdateUserSubscription(c *gin.Context) {
+	subId, _ := strconv.Atoi(c.Param("id"))
+	if subId <= 0 {
+		common.ApiErrorMsg(c, "无效的订阅ID")
+		return
+	}
+	var req model.UserSubscriptionUpdate
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiErrorMsg(c, "参数错误")
+		return
+	}
+	if req.AmountTotal != nil && *req.AmountTotal < 0 {
+		common.ApiErrorMsg(c, "总额度不能为负数")
+		return
+	}
+	if req.StartTime != nil && *req.StartTime < 0 {
+		common.ApiErrorMsg(c, "开始时间不能为负数")
+		return
+	}
+	if req.EndTime != nil && *req.EndTime < 0 {
+		common.ApiErrorMsg(c, "到期时间不能为负数")
+		return
+	}
+	if req.QuotaResetCustomSeconds != nil && *req.QuotaResetCustomSeconds < 0 {
+		common.ApiErrorMsg(c, "自定义重置周期不能为负数")
+		return
+	}
+	existing, err := model.GetUserSubscriptionById(subId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	groups := ratio_setting.GetGroupRatioCopy()
+	validateGroup := func(value *string, previous string, message string) bool {
+		if value == nil {
+			return true
+		}
+		group := strings.TrimSpace(*value)
+		if group == "" || group == strings.TrimSpace(previous) {
+			return true
+		}
+		if _, ok := groups[group]; !ok {
+			common.ApiErrorMsg(c, message)
+			return false
+		}
+		return true
+	}
+	if req.UpgradeGroup != nil {
+		if !validateGroup(req.UpgradeGroup, existing.UpgradeGroup, "升级分组不存在") {
+			return
+		}
+	}
+	if req.DowngradeGroup != nil {
+		if !validateGroup(req.DowngradeGroup, existing.DowngradeGroup, "降级分组不存在") {
+			return
+		}
+	}
+	if req.BillingGroup != nil {
+		if !validateGroup(req.BillingGroup, existing.BillingGroup, "订阅适用分组不存在") {
+			return
+		}
+	}
+	updated, err := model.AdminUpdateUserSubscription(subId, req)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	recordManageAuditFor(c, updated.UserId, "subscription.user_update", map[string]interface{}{
+		"subscription_id": subId,
+		"target_user_id":  updated.UserId,
+	})
+	common.ApiSuccess(c, gin.H{"subscription": updated})
+}
+
+// AdminResetUserSubscription resets quota for exactly one subscription
+// instance. The optional advance_reset_time flag defaults to true.
+func AdminResetUserSubscription(c *gin.Context) {
+	subId, _ := strconv.Atoi(c.Param("id"))
+	if subId <= 0 {
+		common.ApiErrorMsg(c, "无效的订阅ID")
+		return
+	}
+	var req AdminResetUserSubscriptionRequest
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		common.ApiErrorMsg(c, "参数错误")
+		return
+	}
+	advanceResetTime := true
+	if req.AdvanceResetTime != nil {
+		advanceResetTime = *req.AdvanceResetTime
+	}
+	updated, err := model.AdminResetUserSubscription(subId, advanceResetTime)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	recordManageAuditFor(c, updated.UserId, "subscription.user_reset", map[string]interface{}{
+		"subscription_id":    subId,
+		"target_user_id":     updated.UserId,
+		"advance_reset_time": advanceResetTime,
+	})
+	common.ApiSuccess(c, gin.H{"subscription": updated})
 }

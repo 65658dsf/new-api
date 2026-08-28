@@ -89,9 +89,13 @@ var auditRouteActions = map[string]string{
 	"DELETE /api/deployments/:id": "deployment.delete",
 
 	// 订阅（管理员）
-	"POST /api/subscription/admin/plans":    "subscription.plan_create",
-	"PUT /api/subscription/admin/plans/:id": "subscription.plan_update",
-	"POST /api/subscription/admin/bind":     "subscription.bind",
+	"POST /api/subscription/admin/plans":                        "subscription.plan_create",
+	"PUT /api/subscription/admin/plans/:id":                     "subscription.plan_update",
+	"POST /api/subscription/admin/bind":                         "subscription.bind",
+	"PATCH /api/subscription/admin/user_subscriptions/:id":      "subscription.user_update",
+	"PUT /api/subscription/admin/user_subscriptions/:id":        "subscription.user_update",
+	"POST /api/subscription/admin/user_subscriptions/:id/reset": "subscription.user_reset",
+	"DELETE /api/subscription/admin/user_subscriptions/:id":     "subscription.user_delete",
 
 	// 日志
 	"POST /api/system-task/log-cleanup": "log.cleanup_start",

@@ -16,12 +16,24 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import {
+  Delete02Icon,
+  PencilEdit01Icon,
+  Refresh01Icon,
+} from '@hugeicons/core-free-icons'
+import { HugeiconsIcon } from '@hugeicons/react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { DataTableRowActionMenu } from '@/components/data-table/core/row-action-menu'
 import { GroupBadge } from '@/components/group-badge'
 import { TableId } from '@/components/table-id'
+import {
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu'
 import { formatQuota } from '@/lib/format'
 
 import { formatTimestamp } from '../lib'
@@ -29,8 +41,17 @@ import { getSubscriptionRemainingQuota } from '../lib/subscription-display'
 import type { AdminSubscriptionRecord } from '../types'
 import { SubscriptionStatusBadge } from './subscription-status-badge'
 
-export function useAdminSubscriptionsColumns(): ColumnDef<AdminSubscriptionRecord>[] {
+interface AdminSubscriptionColumnActions {
+  onEdit: (record: AdminSubscriptionRecord) => void
+  onReset: (record: AdminSubscriptionRecord) => void
+  onDelete: (record: AdminSubscriptionRecord) => void
+}
+
+export function useAdminSubscriptionsColumns(
+  actions: AdminSubscriptionColumnActions
+): ColumnDef<AdminSubscriptionRecord>[] {
   const { t } = useTranslation()
+  const { onDelete, onEdit, onReset } = actions
 
   return useMemo(
     (): ColumnDef<AdminSubscriptionRecord>[] => [
@@ -181,7 +202,52 @@ export function useAdminSubscriptionsColumns(): ColumnDef<AdminSubscriptionRecor
         ),
         size: 170,
       },
+      {
+        id: 'actions',
+        header: t('Actions'),
+        cell: ({ row }) => {
+          const record = row.original
+          const subscription = record.subscription
+          const isActive =
+            subscription.status === 'active' &&
+            subscription.start_time > 0 &&
+            subscription.start_time <= Date.now() / 1000 &&
+            subscription.end_time > Date.now() / 1000
+          return (
+            <DataTableRowActionMenu
+              ariaLabel={t('Actions')}
+              triggerLabel={t('Actions')}
+            >
+              <DropdownMenuGroup>
+                <DropdownMenuItem
+                  disabled={!isActive}
+                  onClick={() => onReset(record)}
+                >
+                  <HugeiconsIcon icon={Refresh01Icon} strokeWidth={2} />
+                  {t('Reset quota')}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => onEdit(record)}>
+                  <HugeiconsIcon icon={PencilEdit01Icon} strokeWidth={2} />
+                  {t('Modify subscription')}
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuGroup>
+                <DropdownMenuItem
+                  variant='destructive'
+                  onClick={() => onDelete(record)}
+                >
+                  <HugeiconsIcon icon={Delete02Icon} strokeWidth={2} />
+                  {t('Delete subscription')}
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+            </DataTableRowActionMenu>
+          )
+        },
+        size: 112,
+        meta: { pinned: 'right' as const },
+      },
     ],
-    [t]
+    [onDelete, onEdit, onReset, t]
   )
 }

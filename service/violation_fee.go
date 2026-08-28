@@ -123,7 +123,14 @@ func ChargeViolationFeeIfNeeded(ctx *gin.Context, relayInfo *relaycommon.RelayIn
 		return false
 	}
 
-	if err := PostConsumeQuota(relayInfo, feeQuota, 0, true); err != nil {
+	feeRelayInfo := *relayInfo
+	// Violation fees are an independent charge after the failed request's
+	// normal refund path. They must not settle or mutate the original
+	// subscription pre-consume record.
+	feeRelayInfo.RequestId = ""
+	feeRelayInfo.SubscriptionPreConsumed = 0
+	feeRelayInfo.SubscriptionPostDelta = 0
+	if err := PostConsumeQuota(&feeRelayInfo, feeQuota, 0, true); err != nil {
 		logger.LogError(ctx, fmt.Sprintf("failed to charge violation fee: %s", err.Error()))
 		return false
 	}

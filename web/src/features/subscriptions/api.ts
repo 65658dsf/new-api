@@ -24,6 +24,8 @@ import type {
   PlanPayload,
   UserSubscriptionRecord,
   CreateUserSubscriptionRequest,
+  AdminUpdateUserSubscriptionRequest,
+  ResetUserSubscriptionRequest,
   ResetUserSubscriptionsRequest,
   ResetPlanSubscriptionsRequest,
   SubscriptionResetResult,
@@ -115,6 +117,28 @@ export async function deleteUserSubscription(
 ): Promise<ApiResponse> {
   const res = await api.delete(
     `/api/subscription/admin/user_subscriptions/${subId}`
+  )
+  return res.data
+}
+
+export async function updateUserSubscription(
+  subId: number,
+  data: AdminUpdateUserSubscriptionRequest
+): Promise<ApiResponse<UserSubscriptionRecord>> {
+  const res = await api.patch(
+    `/api/subscription/admin/user_subscriptions/${subId}`,
+    data
+  )
+  return res.data
+}
+
+export async function resetUserSubscription(
+  subId: number,
+  data: ResetUserSubscriptionRequest = {}
+): Promise<ApiResponse<UserSubscriptionRecord>> {
+  const res = await api.post(
+    `/api/subscription/admin/user_subscriptions/${subId}/reset`,
+    data
   )
   return res.data
 }

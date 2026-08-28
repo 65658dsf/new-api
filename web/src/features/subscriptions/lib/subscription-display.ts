@@ -25,7 +25,12 @@ export function getSubscriptionDisplayStatus(
   now: number
 ): SubscriptionDisplayStatus {
   if (subscription.status === 'cancelled') return 'cancelled'
-  if (subscription.status === 'active' && subscription.end_time > now) {
+  if (
+    subscription.status === 'active' &&
+    subscription.start_time > 0 &&
+    subscription.start_time <= now &&
+    subscription.end_time > now
+  ) {
     return 'active'
   }
   return 'expired'

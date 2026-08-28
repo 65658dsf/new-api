@@ -193,6 +193,9 @@ func SetApiRouter(router *gin.Engine) {
 			subscriptionAdminRoute.POST("/users/:id/subscriptions", controller.AdminCreateUserSubscription)
 			subscriptionAdminRoute.POST("/users/:id/subscriptions/reset", controller.AdminResetUserSubscriptionsByPlan)
 			subscriptionAdminRoute.POST("/user_subscriptions/:id/invalidate", controller.AdminInvalidateUserSubscription)
+			subscriptionAdminRoute.POST("/user_subscriptions/:id/reset", controller.AdminResetUserSubscription)
+			subscriptionAdminRoute.PATCH("/user_subscriptions/:id", controller.AdminUpdateUserSubscription)
+			subscriptionAdminRoute.PUT("/user_subscriptions/:id", controller.AdminUpdateUserSubscription)
 			subscriptionAdminRoute.DELETE("/user_subscriptions/:id", controller.AdminDeleteUserSubscription)
 		}
 

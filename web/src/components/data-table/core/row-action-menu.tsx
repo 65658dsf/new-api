@@ -16,7 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { MoreHorizontal } from 'lucide-react'
+import { MoreHorizontalIcon } from '@hugeicons/core-free-icons'
+import { HugeiconsIcon } from '@hugeicons/react'
 import * as React from 'react'
 
 import { Button } from '@/components/ui/button'
@@ -30,6 +31,7 @@ import { cn } from '@/lib/utils'
 type DataTableRowActionMenuProps = {
   children: React.ReactNode
   ariaLabel: string
+  triggerLabel?: React.ReactNode
   contentClassName?: string
   modal?: boolean
   onOpenChange?: (open: boolean) => void
@@ -42,13 +44,18 @@ export function DataTableRowActionMenu(props: DataTableRowActionMenuProps) {
         render={
           <Button
             variant='ghost'
-            size='icon'
+            size={props.triggerLabel ? 'sm' : 'icon'}
             className='data-popup-open:bg-muted'
             aria-label={props.ariaLabel}
           />
         }
       >
-        <MoreHorizontal aria-hidden='true' />
+        <HugeiconsIcon
+          icon={MoreHorizontalIcon}
+          strokeWidth={2}
+          aria-hidden='true'
+        />
+        {props.triggerLabel}
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align='end'
