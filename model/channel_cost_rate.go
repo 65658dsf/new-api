@@ -166,6 +166,9 @@ func GetCurrentChannelCostRateSnapshot(channelID int, fallback float64) (Channel
 	if DB == nil {
 		return ChannelCostRateSnapshot{CostRate: fallback}, errors.New("main database is not initialized")
 	}
+	if !DB.Migrator().HasTable(&ChannelCostRateVersion{}) {
+		return ChannelCostRateSnapshot{CostRate: fallback}, nil
+	}
 
 	var version ChannelCostRateVersion
 	err := DB.Where("channel_id = ?", channelID).
@@ -187,6 +190,9 @@ func getChannelCostRateSnapshotAtEffectiveTime(channelID int, effectiveAt int64,
 	}
 	if DB == nil {
 		return ChannelCostRateSnapshot{CostRate: fallback}, errors.New("main database is not initialized")
+	}
+	if !DB.Migrator().HasTable(&ChannelCostRateVersion{}) {
+		return ChannelCostRateSnapshot{CostRate: fallback}, nil
 	}
 
 	var version ChannelCostRateVersion
@@ -272,6 +278,9 @@ func appendChannelCostRateVersion(tx *gorm.DB, channelID int, costRate float64, 
 	}
 	if effectiveAt < 0 {
 		return nil, errors.New("channel cost rate effective time must not be negative")
+	}
+	if !tx.Migrator().HasTable(&ChannelCostRateVersion{}) {
+		return nil, nil
 	}
 
 	var latest ChannelCostRateVersion

@@ -156,7 +156,12 @@ func CreateChannelFinancialRecord(record *ChannelFinancialRecord) error {
 	if DB == nil {
 		return errors.New("main database is not initialized")
 	}
-	return DB.Create(record).Error
+	return DB.Transaction(func(tx *gorm.DB) error {
+		if !tx.Migrator().HasTable(&ChannelFinancialRecord{}) {
+			return nil
+		}
+		return tx.Create(record).Error
+	})
 }
 
 func GetChannelFinancialRecords(start, end int64, channelID int, modelName string) ([]*ChannelFinancialRecord, error) {

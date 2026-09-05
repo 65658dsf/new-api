@@ -19,9 +19,9 @@ func isFiniteNonNegative(value float64) bool {
 	return value >= 0 && !math.IsNaN(value) && !math.IsInf(value, 0)
 }
 
-func markFinancialSettlement(other map[string]interface{}, succeeded bool) {
+func markFinancialSettlement(other *model.LogOther, succeeded bool) {
 	if other != nil {
-		other["financial_settled"] = succeeded
+		other.SetPublic("financial_settled", succeeded)
 	}
 }
 
