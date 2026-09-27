@@ -56,7 +56,7 @@ func TestApplyUpstreamBodyMetadataSetsReplayableMetadata(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, payload, sent)
 
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		rc, err := req.GetBody()
 		require.NoError(t, err)
 		replay, err := io.ReadAll(rc)
@@ -110,7 +110,6 @@ func TestApplyUpstreamBodyMetadataKeepsNativeMetadataForNonReplayableBody(t *tes
 	}
 
 	for _, test := range tests {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -241,7 +240,7 @@ func TestDoTaskApiRequest_KeepsReplayableGetBody(t *testing.T) {
 	require.NotNil(t, req.GetBody)
 	// Even after the request body has been fully written, GetBody must still
 	// return the complete payload, repeatedly.
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		rc, err := req.GetBody()
 		require.NoError(t, err)
 		replay, err := io.ReadAll(rc)
@@ -345,6 +344,24 @@ func awaitH2ServerResult(t *testing.T, resultCh <-chan h2ServerResult) h2ServerR
 	}
 }
 
+func closeH2TestConnection(conn net.Conn) error {
+	defer conn.Close()
+	// Send FIN after the last frame, then drain outstanding SETTINGS ACKs.
+	// Closing with unread bytes can reset TCP on Windows and discard a
+	// GOAWAY or RST_STREAM before the client can apply its retry semantics.
+	tcpConn, ok := conn.(*net.TCPConn)
+	if !ok {
+		return fmt.Errorf("HTTP/2 test listener returned %T instead of a TCP connection", conn)
+	}
+	if err := tcpConn.CloseWrite(); err != nil {
+		return err
+	}
+	if _, err := io.Copy(io.Discard, conn); err != nil {
+		return fmt.Errorf("drain HTTP/2 connection: %w", err)
+	}
+	return nil
+}
+
 // runResetOnFirstStreamServer speaks just enough raw HTTP/2 to emulate an
 // upstream that accepts the first request, waits until the request body has
 // been fully written, and then resets the stream with REFUSED_STREAM (the
@@ -362,7 +379,13 @@ func runResetOnFirstStreamServer(ln net.Listener, expectRetry bool) <-chan h2Ser
 			res.err = err
 			return
 		}
-		defer conn.Close()
+		defer func() {
+			if res.err != nil {
+				conn.Close()
+				return
+			}
+			res.err = closeH2TestConnection(conn)
+		}()
 
 	attempts:
 		for attempt := 0; ; attempt++ {
@@ -400,7 +423,7 @@ func runGoAwayAfterFirstRequestServer(ln net.Listener) <-chan h2ServerResult {
 		res := h2ServerResult{}
 		defer func() { resCh <- res }()
 
-		for attempt := 0; attempt < 2; attempt++ {
+		for attempt := range 2 {
 			conn, framer, err := acceptH2TestConnection(ln)
 			if err != nil {
 				res.err = err
@@ -417,20 +440,19 @@ func runGoAwayAfterFirstRequestServer(ln net.Listener) <-chan h2ServerResult {
 
 			if attempt == 0 {
 				err = framer.WriteGoAway(0, http2.ErrCodeNo, nil)
+			} else {
+				err = writeH2TestResponse(framer, streamID)
+			}
+			if err != nil {
 				conn.Close()
-				if err != nil {
-					res.err = err
-					return
-				}
-				continue
+				res.err = err
+				return
 			}
 
-			err = writeH2TestResponse(framer, streamID)
-			conn.Close()
-			if err != nil {
+			if err := closeH2TestConnection(conn); err != nil {
 				res.err = err
+				return
 			}
-			return
 		}
 	}()
 	return resCh

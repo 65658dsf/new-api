@@ -17,49 +17,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import assert from 'node:assert/strict'
-import { after, afterEach, describe, test } from 'node:test'
 
-import { Window } from 'happy-dom'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, test } from 'vitest'
 
-const domWindow = new Window()
-const domGlobals = [
-  'window',
-  'document',
-  'navigator',
-  'HTMLElement',
-  'HTMLButtonElement',
-  'HTMLInputElement',
-  'SVGElement',
-  'Node',
-  'Element',
-  'Event',
-  'KeyboardEvent',
-  'PointerEvent',
-  'MouseEvent',
-  'FocusEvent',
-  'CustomEvent',
-  'MutationObserver',
-  'ResizeObserver',
-  'requestAnimationFrame',
-  'cancelAnimationFrame',
-  'getComputedStyle',
-] as const
-
-Object.defineProperty(domWindow, 'matchMedia', {
-  configurable: true,
-  value: () => ({
-    matches: false,
-    addEventListener: () => undefined,
-    removeEventListener: () => undefined,
-  }),
-})
-
-for (const key of domGlobals) {
-  Object.defineProperty(globalThis, key, {
-    configurable: true,
-    value: domWindow[key],
-  })
-}
+import {
+  DEFAULT_CURRENCY_CONFIG,
+  useSystemConfigStore,
+} from '@/stores/system-config-store'
 
 const { act } = await import('react')
 const { createRoot } = await import('react-dom/client')
@@ -78,10 +43,13 @@ await i18n.use(initReactI18next).init({
   resources: { en: { translation: {} } },
 })
 
-const reactTestGlobals = globalThis as typeof globalThis & {
-  IS_REACT_ACT_ENVIRONMENT?: boolean
-}
-reactTestGlobals.IS_REACT_ACT_ENVIRONMENT = true
+const initialSystemConfig = useSystemConfigStore.getState().config
+
+beforeEach(() => {
+  useSystemConfigStore
+    .getState()
+    .setConfig({ currency: { ...DEFAULT_CURRENCY_CONFIG } })
+})
 
 type ApiGet = (
   url: string,
@@ -108,6 +76,7 @@ const originalPost = apiClient.post
 const originalDelete = apiClient.delete
 let renderedTable: RenderedTable | null = null
 let requests: Array<Record<string, unknown>> = []
+let initialUserName = 'Alice'
 let mutationRequests: Array<{
   method: 'patch' | 'post' | 'delete'
   url: string
@@ -184,6 +153,7 @@ function response(items: unknown[], page: number) {
 function installApiFixtures(items: unknown[] = [aliceRecord]) {
   requests = []
   mutationRequests = []
+  initialUserName = (items[0] as typeof aliceRecord).user.display_name
   apiClient.get = async (url, config) => {
     if (url === '/api/group') {
       return { data: { success: true, data: ['group-a', 'group-b'] } }
@@ -216,27 +186,7 @@ async function waitForCondition(
   condition: () => boolean,
   failureMessage: string
 ): Promise<void> {
-  if (condition()) return
-
-  await new Promise<void>((resolve, reject) => {
-    const observer = new MutationObserver(() => {
-      if (!condition()) return
-      clearTimeout(timeoutId)
-      observer.disconnect()
-      resolve()
-    })
-    const timeoutId = setTimeout(() => {
-      observer.disconnect()
-      reject(new Error(`${failureMessage}: ${document.body.textContent}`))
-    }, 1500)
-
-    observer.observe(document, {
-      attributes: true,
-      childList: true,
-      characterData: true,
-      subtree: true,
-    })
-  })
+  await waitFor(() => expect(condition(), failureMessage).toBe(true))
 }
 
 async function renderTable() {
@@ -260,31 +210,20 @@ async function renderTable() {
       </QueryClientProvider>
     )
   })
-  await act(async () =>
-    waitForCondition(
-      () =>
-        requests.length === 1 &&
-        document.body.textContent?.includes('Alice') === true,
-      'initial subscription page did not load'
-    )
+  await waitForCondition(
+    () =>
+      requests.length === 1 &&
+      document.body.textContent?.includes(initialUserName) === true,
+    'initial subscription page did not load'
   )
 }
 
 async function changeInput(input: HTMLInputElement, value: string) {
-  await act(async () => {
-    const valueSetter = Object.getOwnPropertyDescriptor(
-      domWindow.HTMLInputElement.prototype,
-      'value'
-    )?.set
-    assert.ok(valueSetter)
-    valueSetter.call(input, value)
-    input.dispatchEvent(
-      new domWindow.Event('input', { bubbles: true }) as unknown as Event
-    )
-  })
+  fireEvent.change(input, { target: { value } })
 }
 
 afterEach(async () => {
+  useSystemConfigStore.getState().setConfig(initialSystemConfig)
   apiClient.get = originalGet
   apiClient.patch = originalPatch
   apiClient.post = originalPost
@@ -297,10 +236,6 @@ afterEach(async () => {
     renderedTable = null
   }
   document.body.replaceChildren()
-})
-
-after(() => {
-  domWindow.close()
 })
 
 describe('admin subscriptions table', () => {
@@ -317,11 +252,9 @@ describe('admin subscriptions table', () => {
     )
     assert.ok(search)
     await changeInput(search, 'Bob')
-    await act(async () =>
-      waitForCondition(
-        () => requests.some((params) => params.keyword === 'Bob'),
-        'search request was not sent'
-      )
+    await waitForCondition(
+      () => requests.some((params) => params.keyword === 'Bob'),
+      'search request was not sent'
     )
     assert.deepEqual(requests.at(-1), {
       p: 1,
@@ -340,11 +273,9 @@ describe('admin subscriptions table', () => {
     ].find((item) => item.textContent?.trim() === 'Active')
     assert.ok(activeOption)
     await act(async () => activeOption.click())
-    await act(async () =>
-      waitForCondition(
-        () => requests.some((params) => params.status === 'active'),
-        'status request was not sent'
-      )
+    await waitForCondition(
+      () => requests.some((params) => params.status === 'active'),
+      'status request was not sent'
     )
     assert.equal(requests.at(-1)?.status, 'active')
 
@@ -353,11 +284,9 @@ describe('admin subscriptions table', () => {
     )
     assert.ok(nextButton)
     await act(async () => nextButton.click())
-    await act(async () =>
-      waitForCondition(
-        () => requests.some((params) => params.p === 2),
-        'next page request was not sent'
-      )
+    await waitForCondition(
+      () => requests.some((params) => params.p === 2),
+      'next page request was not sent'
     )
     assert.equal(requests.at(-1)?.p, 2)
   })
@@ -373,14 +302,12 @@ describe('admin subscriptions table', () => {
     assert.equal(actionsTrigger.textContent?.trim(), 'Actions')
 
     await act(async () => actionsTrigger.click())
-    await act(async () =>
-      waitForCondition(
-        () =>
-          document.body.textContent?.includes('Reset quota') === true &&
-          document.body.textContent?.includes('Modify subscription') === true &&
-          document.body.textContent?.includes('Delete subscription') === true,
-        'subscription action menu did not open'
-      )
+    await waitForCondition(
+      () =>
+        document.body.textContent?.includes('Reset quota') === true &&
+        document.body.textContent?.includes('Modify subscription') === true &&
+        document.body.textContent?.includes('Delete subscription') === true,
+      'subscription action menu did not open'
     )
 
     assert.equal(document.body.textContent?.includes('Reset quota'), true)
@@ -426,14 +353,12 @@ describe('admin subscriptions table', () => {
     ].find((element) => element.textContent?.includes('Modify subscription'))
     assert.ok(item)
     await act(async () => item.click())
-    await act(async () =>
-      waitForCondition(
-        () =>
-          document.body.textContent?.includes(
-            'Changes apply only to this subscription instance'
-          ) === true,
-        'edit drawer did not open'
-      )
+    await waitForCondition(
+      () =>
+        document.body.textContent?.includes(
+          'Changes apply only to this subscription instance'
+        ) === true,
+      'edit drawer did not open'
     )
     assert.equal(
       document.body.textContent?.includes('Modify subscription'),
@@ -457,16 +382,10 @@ describe('admin subscriptions table', () => {
     ].find((element) => element.textContent?.includes('Modify subscription'))
     assert.ok(item)
     await act(async () => item.click())
-    await act(async () =>
-      waitForCondition(
-        () =>
-          document
-            .querySelector<HTMLButtonElement>(
-              '#admin-subscription-form [data-slot="select-trigger"]'
-            )
-            ?.textContent?.trim() === 'Active',
-        'edit form did not preserve the stored subscription status'
-      )
+    await waitFor(() =>
+      expect(
+        screen.getByRole('combobox', { name: 'Status' })
+      ).toHaveTextContent('Active')
     )
   })
 
@@ -486,13 +405,11 @@ describe('admin subscriptions table', () => {
     ].find((element) => element.textContent?.includes('Reset quota'))
     assert.ok(resetItem)
     await act(async () => resetItem.click())
-    await act(async () =>
-      waitForCondition(
-        () =>
-          document.body.textContent?.includes('Reset subscription quota') ===
-          true,
-        'reset confirmation did not open'
-      )
+    await waitForCondition(
+      () =>
+        document.body.textContent?.includes('Reset subscription quota') ===
+        true,
+      'reset confirmation did not open'
     )
     assert.equal(
       document.body.textContent?.includes(
@@ -515,11 +432,9 @@ describe('admin subscriptions table', () => {
     ].find((element) => element.textContent?.includes('Delete subscription'))
     assert.ok(deleteItem)
     await act(async () => deleteItem.click())
-    await act(async () =>
-      waitForCondition(
-        () => document.body.textContent?.includes('Confirm delete') === true,
-        'delete confirmation did not open'
-      )
+    await waitForCondition(
+      () => document.body.textContent?.includes('Confirm delete') === true,
+      'delete confirmation did not open'
     )
     assert.equal(
       document.body.textContent?.includes(
@@ -567,14 +482,12 @@ describe('admin subscriptions table', () => {
     ].find((element) => element.textContent?.includes('Modify subscription'))
     assert.ok(item)
     await act(async () => item.click())
-    await act(async () =>
-      waitForCondition(
-        () =>
-          document.querySelector<HTMLInputElement>(
-            '#admin-subscription-form input[type="number"]'
-          )?.value === '0.001',
-        'edit form did not open'
-      )
+    await waitForCondition(
+      () =>
+        document.querySelector<HTMLInputElement>(
+          '#admin-subscription-form input[type="number"]'
+        )?.value === '0.002',
+      'edit form did not open'
     )
 
     const quotaInput = document.querySelector<HTMLInputElement>(
@@ -587,16 +500,14 @@ describe('admin subscriptions table', () => {
     )
     assert.ok(saveButton)
     await act(async () => saveButton.click())
-    await act(async () =>
-      waitForCondition(
-        () => mutationRequests.some((request) => request.method === 'patch'),
-        'subscription update request was not sent'
-      )
+    await waitForCondition(
+      () => mutationRequests.some((request) => request.method === 'patch'),
+      'subscription update request was not sent'
     )
     assert.deepEqual(mutationRequests.at(-1), {
       method: 'patch',
       url: '/api/subscription/admin/user_subscriptions/1',
-      data: { amount_total: 2_000_000 },
+      data: { amount_total: 1_000_000 },
     })
   })
 })
