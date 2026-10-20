@@ -33,6 +33,9 @@ import {
   DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import type { RequestVerificationOptions } from '@/features/auth/secure-verification'
+import { handleServerError } from '@/lib/handle-server-error'
+import { AuthOperationError } from '@/lib/secure-verification'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { deleteUser, manageUser } from '../api'
@@ -51,7 +54,7 @@ interface DataTableBulkActionsProps {
 
 export function DataTableBulkActions({ table }: DataTableBulkActionsProps) {
   const { t } = useTranslation()
-  const { triggerRefresh } = useUsers()
+  const { triggerRefresh, requestVerification, verificationActive } = useUsers()
   const currentUserRole = useAuthStore((state) => state.auth.user?.role ?? 0)
   const [pendingUsers, setPendingUsers] = useState<User[]>([])
   const [pendingAction, setPendingAction] = useState<BulkUserAction | null>(
@@ -79,21 +82,48 @@ export function DataTableBulkActions({ table }: DataTableBulkActionsProps) {
     if (users.length === 0) return
 
     setProcessingAction(action)
-    const results = await Promise.allSettled(
-      users.map((user) =>
-        action === 'delete' ? deleteUser(user.id) : manageUser(user.id, action)
-      )
-    )
-    const successful = results.filter(
-      (result) => result.status === 'fulfilled' && result.value.success
-    ).length
-    const failed = totalCount - successful
+    let successful = 0
+    let attempted = 0
+    let canceled = false
+    try {
+      for (const user of users) {
+        const request: RequestVerificationOptions =
+          action === 'delete'
+            ? { scope: 'admin.user.delete', context: { user_id: user.id } }
+            : {
+                scope: 'admin.user.manage',
+                context: { user_id: user.id, action },
+              }
+        const proof = await requestVerification({
+          ...request,
+          title: t('Confirm Action'),
+          description: t(
+            'Confirm your identity before changing the account {{username}}.',
+            { username: user.username }
+          ),
+        })
+        if (!proof) {
+          canceled = true
+          break
+        }
+        attempted++
+        const result =
+          action === 'delete'
+            ? await deleteUser(user.id, proof.proof_token)
+            : await manageUser(user.id, action, proof.proof_token)
+        if (result.success) successful++
+      }
+    } catch (error) {
+      canceled = true
+      handleServerError(AuthOperationError.from(error), t('Request failed'))
+    }
+    const failed = canceled ? attempted - successful : totalCount - successful
 
     if (successful > 0) {
       toast.success(
         t('Processed {{success}} of {{total}} selected users.', {
           success: successful,
-          total: totalCount,
+          total: canceled ? attempted : totalCount,
         })
       )
       triggerRefresh()
@@ -104,7 +134,7 @@ export function DataTableBulkActions({ table }: DataTableBulkActionsProps) {
       )
     }
 
-    table.resetRowSelection()
+    if (!canceled || successful > 0) table.resetRowSelection()
     setProcessingAction(null)
     clearPendingAction()
   }
@@ -163,7 +193,7 @@ export function DataTableBulkActions({ table }: DataTableBulkActionsProps) {
               <Button
                 variant='outline'
                 size='sm'
-                disabled={processingAction !== null}
+                disabled={processingAction !== null || verificationActive}
                 aria-label={t('Operation')}
               />
             }
@@ -210,7 +240,7 @@ export function DataTableBulkActions({ table }: DataTableBulkActionsProps) {
       </BulkActionsToolbar>
 
       <ConfirmDialog
-        open={pendingAction === 'delete'}
+        open={pendingAction === 'delete' && !verificationActive}
         onOpenChange={(open) => {
           if (!open && !processingAction) clearPendingAction()
         }}

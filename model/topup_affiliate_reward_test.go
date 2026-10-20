@@ -147,6 +147,18 @@ func TestStripeTopUpReplayDoesNotDuplicateQuotaOrInviterReward(t *testing.T) {
 	assert.Equal(t, 1, actualInviter.AffQuota)
 	assert.Equal(t, 1, actualInviter.AffHistoryQuota)
 	assert.Equal(t, 100, actualInvitee.Quota)
+
+	var rewardLogs []Log
+	require.NoError(t, LOG_DB.Where("user_id = ? AND type = ?", inviter.Id, LogTypeSystem).Find(&rewardLogs).Error)
+	require.Len(t, rewardLogs, 1)
+	var other struct {
+		ContentParts []*common.Message `json:"content_parts"`
+	}
+	require.NoError(t, common.UnmarshalJsonStr(rewardLogs[0].Other, &other))
+	require.Len(t, other.ContentParts, 1)
+	assert.Equal(t, "Invited user top-up reward {{quota}}", other.ContentParts[0].Key)
+	assert.Contains(t, other.ContentParts[0].Params, "quota")
+	assert.Equal(t, other.ContentParts[0].Error(), rewardLogs[0].Content)
 }
 
 func TestCreemTopUpReplayDoesNotDuplicateQuotaOrInviterReward(t *testing.T) {

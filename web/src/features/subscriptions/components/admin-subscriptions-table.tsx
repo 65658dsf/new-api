@@ -29,6 +29,7 @@ import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { DataTablePage, useDataTable } from '@/components/data-table'
 import { useMediaQuery } from '@/hooks'
+import { getServerErrorMessage } from '@/lib/server-error-message'
 
 import {
   deleteUserSubscription,
@@ -70,7 +71,7 @@ export function AdminSubscriptionsTable() {
         advance_reset_time: true,
       })
       if (!result.success) {
-        toast.error(result.message || t('Operation failed'))
+        toast.error(getServerErrorMessage(result, t('Operation failed')))
         return
       }
       toast.success(t('Reset completed'))
@@ -89,7 +90,7 @@ export function AdminSubscriptionsTable() {
     try {
       const result = await deleteUserSubscription(deleteRecord.subscription.id)
       if (!result.success) {
-        toast.error(result.message || t('Operation failed'))
+        toast.error(getServerErrorMessage(result, t('Operation failed')))
         return
       }
       toast.success(t('Deleted successfully'))
@@ -157,7 +158,7 @@ export function AdminSubscriptionsTable() {
         status: statusFilter || undefined,
       })
       if (!result.success) {
-        toast.error(result.message || t('Loading failed'))
+        toast.error(getServerErrorMessage(result, t('Loading failed')))
         return { items: [], total: 0 }
       }
       return {

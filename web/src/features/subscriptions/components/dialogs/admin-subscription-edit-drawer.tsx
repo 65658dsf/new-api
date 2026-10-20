@@ -74,6 +74,7 @@ import {
   parseQuotaFromDollars,
   quotaUnitsToDollars,
 } from '@/lib/format'
+import { getServerErrorMessage } from '@/lib/server-error-message'
 
 import { getGroups, updateUserSubscription } from '../../api'
 import { getResetPeriodOptions } from '../../constants'
@@ -361,7 +362,7 @@ export function AdminSubscriptionEditDrawer(props: Props) {
         payload
       )
       if (!response.success) {
-        toast.error(response.message || t('Update failed'))
+        toast.error(getServerErrorMessage(response, t('Update failed')))
         return
       }
       toast.success(t('Updated successfully'))

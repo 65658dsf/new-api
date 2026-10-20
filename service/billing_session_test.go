@@ -1,6 +1,7 @@
 package service
 
 import (
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -89,7 +90,7 @@ func makeBillingSessionRelayInfo(userId int, tokenId int, tokenKey string, using
 
 func TestNewBillingSessionUsesSubscriptionOnlyForMatchingBillingGroup(t *testing.T) {
 	truncate(t)
-	c := &gin.Context{}
+	c := &gin.Context{Request: httptest.NewRequest("POST", "/v1/chat/completions", nil)}
 
 	const userId = 1001
 	const tokenId = 1001
@@ -112,7 +113,7 @@ func TestNewBillingSessionUsesSubscriptionOnlyForMatchingBillingGroup(t *testing
 
 func TestNewBillingSessionUsesWalletWhenBillingGroupDoesNotMatch(t *testing.T) {
 	truncate(t)
-	c := &gin.Context{}
+	c := &gin.Context{Request: httptest.NewRequest("POST", "/v1/chat/completions", nil)}
 
 	const userId = 1002
 	const tokenId = 1002
@@ -135,7 +136,7 @@ func TestNewBillingSessionUsesWalletWhenBillingGroupDoesNotMatch(t *testing.T) {
 
 func TestNewBillingSessionUsesWalletForChatGPTWhenSubscriptionTargetsChatGPTPro(t *testing.T) {
 	truncate(t)
-	c := &gin.Context{}
+	c := &gin.Context{Request: httptest.NewRequest("POST", "/v1/chat/completions", nil)}
 
 	const userId = 1004
 	const tokenId = 1004
@@ -158,7 +159,7 @@ func TestNewBillingSessionUsesWalletForChatGPTWhenSubscriptionTargetsChatGPTPro(
 
 func TestNewBillingSessionKeepsUngroupedSubscriptionGlobal(t *testing.T) {
 	truncate(t)
-	c := &gin.Context{}
+	c := &gin.Context{Request: httptest.NewRequest("POST", "/v1/chat/completions", nil)}
 
 	const userId = 1003
 	const tokenId = 1003
